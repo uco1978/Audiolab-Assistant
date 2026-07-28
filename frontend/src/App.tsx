@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
-import { fetchMe, fetchSettings, logout } from "./api";
+import { fetchAuthStatus, fetchMe, logout } from "./api";
 import DiagnosticsPage from "./pages/DiagnosticsPage";
 import HomePage from "./pages/HomePage";
 import JobDetailPage from "./pages/JobDetailPage";
@@ -10,26 +10,28 @@ import SettingsPage from "./pages/SettingsPage";
 import TrainingPage from "./pages/TrainingPage";
 
 export default function App() {
-  const [authEnabled, setAuthEnabled] = useState(false);
+  // Fail closed: require login unless server explicitly says auth is off.
+  const [authEnabled, setAuthEnabled] = useState(true);
   const [ready, setReady] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const settings = await fetchSettings();
-        setAuthEnabled(settings.auth_enabled);
-        if (settings.auth_enabled) {
-          try {
-            const me = await fetchMe();
-            setEmail(me.email);
-          } catch {
-            setEmail(null);
-          }
-        } else {
+        const status = await fetchAuthStatus();
+        setAuthEnabled(status.auth_enabled);
+        if (!status.auth_enabled) {
           setEmail("local@offline");
+          return;
+        }
+        try {
+          const me = await fetchMe();
+          setEmail(me.email);
+        } catch {
+          setEmail(null);
         }
       } catch {
+        setAuthEnabled(true);
         setEmail(null);
       } finally {
         setReady(true);

@@ -240,6 +240,12 @@ export async function fetchQueueStats(): Promise<QueueStats> {
   return res.json();
 }
 
+export async function fetchAuthStatus(): Promise<{ auth_enabled: boolean }> {
+  const res = await fetch(`${API}/auth/status`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function login(email: string, password: string): Promise<AuthUser> {
   const res = await fetch(`${API}/auth/login`, {
     method: "POST",

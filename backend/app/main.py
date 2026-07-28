@@ -88,7 +88,7 @@ async def auth_guard(request: Request, call_next):
         return await call_next(request)
     path = request.url.path
     if (
-        path in {"/api/health", "/api/auth/login"}
+        path in {"/api/health", "/api/auth/login", "/api/auth/status"}
         or path.startswith("/docs")
         or path.startswith("/openapi.json")
     ):
@@ -139,6 +139,11 @@ async def health():
         "storage": storage_mode,
         "queue": queue,
     }
+
+
+@app.get("/api/auth/status")
+async def auth_status():
+    return {"auth_enabled": settings.auth_enabled}
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
