@@ -8,7 +8,7 @@ import asyncpg
 from app.config import get_settings
 from app.models import JobProgressEvent, JobResponse, JobStatus
 
-SCHEMA = """
+SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     url TEXT NOT NULL,
@@ -46,6 +46,49 @@ CREATE TABLE IF NOT EXISTS job_queue (
 );
 """
 
+POSTGRES_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        product_slug TEXT,
+        output_path TEXT,
+        storage_prefix TEXT,
+        progress TEXT NOT NULL DEFAULT '[]',
+        error TEXT,
+        models_used TEXT NOT NULL DEFAULT '[]',
+        variants TEXT NOT NULL DEFAULT '[]',
+        config TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ai_usage (
+        id SERIAL PRIMARY KEY,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        tokens_estimate INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS job_queue (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 2,
+        run_after TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS storage_prefix TEXT",
+]
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -60,15 +103,15 @@ async def init_db() -> None:
     if _is_postgres():
         conn = await asyncpg.connect(settings.database_url)  # type: ignore[arg-type]
         try:
-            await conn.execute(SCHEMA)
-            await conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS storage_prefix TEXT")
+            for statement in POSTGRES_STATEMENTS:
+                await conn.execute(statement)
         finally:
             await conn.close()
         return
 
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(settings.database_path) as db:
-        await db.executescript(SCHEMA)
+        await db.executescript(SQLITE_SCHEMA)
         async with db.execute("PRAGMA table_info(jobs)") as cursor:
             cols = {row[1] for row in await cursor.fetchall()}
         if "storage_prefix" not in cols:
