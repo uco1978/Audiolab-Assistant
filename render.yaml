@@ -57,4 +57,3 @@ databases:
   - name: ppc-postgres
     databaseName: ppc
     user: ppc
-    plan: starter
