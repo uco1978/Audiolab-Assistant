@@ -51,7 +51,7 @@ services:
     autoDeploy: true
     envVars:
       - key: VITE_API_BASE
-        value: https://ppc-backend.onrender.com/api
+        value: https://ppc-backend-w7ey.onrender.com/api
 
 databases:
   - name: ppc-postgres

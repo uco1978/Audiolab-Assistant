@@ -6,6 +6,10 @@ COPY package.json package-lock.json* ./
 RUN npm install
 
 COPY . .
+
+ARG VITE_API_BASE=https://ppc-backend-w7ey.onrender.com/api
+ENV VITE_API_BASE=$VITE_API_BASE
+
 RUN npm run build
 
 ENV PORT=5174
