@@ -9,4 +9,9 @@ export default defineConfig({
       "/api": "http://localhost:8001",
     },
   },
+  preview: {
+    host: "0.0.0.0",
+    port: 5174,
+    allowedHosts: ["ppc-frontend.onrender.com", ".onrender.com"],
+  },
 });
