@@ -45,13 +45,18 @@ export default function TrainingPage() {
   const handleGenerateStyleGuide = async () => {
     setBusy(true);
     setError("");
-    setMessage("");
+    setMessage("Generating style guide… this can take 30–90 seconds.");
+    setStyleGuide("");
+    setStyleGuideMeta("");
     try {
       const result = await generateStyleGuide();
       setStyleGuide(result.content);
       setStyleGuideMeta(`Generated with ${result.model_used} from ${result.samples_used} samples`);
-      setMessage("Style guide generated and saved as style-guide.txt");
+      setMessage(
+        `Done — style guide saved (${result.samples_used} samples, model: ${result.model_used}). Scroll down to read it.`,
+      );
     } catch (err) {
+      setMessage("");
       setError(err instanceof Error ? err.message : "Style guide generation failed");
     } finally {
       setBusy(false);
@@ -89,11 +94,15 @@ export default function TrainingPage() {
             disabled={busy || !corpus?.usable_files}
             onClick={handleGenerateStyleGuide}
           >
-            Generate style guide
+            {busy && message.startsWith("Generating") ? "Generating…" : "Generate style guide"}
           </button>
         </div>
 
-        {message && <p className="muted">{message}</p>}
+        {message && (
+          <p style={{ color: message.startsWith("Done") ? "var(--success, #2e7d32)" : undefined }} className="muted">
+            {message}
+          </p>
+        )}
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
       </div>
 
@@ -101,7 +110,9 @@ export default function TrainingPage() {
         <div className="card">
           <h3>Generated Style Guide</h3>
           {styleGuideMeta && <p className="muted">{styleGuideMeta}</p>}
-          <pre className="preview-block">{styleGuide}</pre>
+          <pre className="preview-block" style={{ whiteSpace: "pre-wrap", maxHeight: "28rem", overflow: "auto" }}>
+            {styleGuide}
+          </pre>
         </div>
       )}
 
