@@ -22,6 +22,7 @@ from app.db import (
     init_db,
     list_jobs,
     queue_stats,
+    update_job,
 )
 from app.integrations.woocommerce import sync_product_to_woocommerce
 from app.models import (
@@ -364,6 +365,19 @@ async def get_job_endpoint(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
     return job
+
+
+@app.post("/api/jobs/{job_id}/rate")
+async def rate_job(job_id: str, body: dict):
+    rating = body.get("rating")
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
+        raise HTTPException(400, "rating must be an integer between 1 and 5")
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    await update_job(job_id, user_rating=rating)
+    updated = await get_job(job_id)
+    return updated
 
 
 @app.post("/api/jobs/{job_id}/open-folder")

@@ -6,10 +6,12 @@ import {
   Job,
   jobFileUrl,
   openFolder,
+  rateJob,
   syncWooCommerce,
 } from "../api";
 import CopyPreview from "../components/CopyPreview";
 import ImagePreview from "../components/ImagePreview";
+import StarRating from "../components/StarRating";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +23,8 @@ export default function JobDetailPage() {
   const [wcKey, setWcKey] = useState("");
   const [wcSecret, setWcSecret] = useState("");
   const [syncMsg, setSyncMsg] = useState("");
+  const [rating, setRating] = useState<number | null>(null);
+  const [ratingBusy, setRatingBusy] = useState(false);
 
   const fetchWithAuth = (url: string) => {
     const token = localStorage.getItem("ppc_access_token");
@@ -33,6 +37,7 @@ export default function JobDetailPage() {
     if (!id) return;
     const j = await fetchJob(id);
     setJob(j);
+    if (j.user_rating != null) setRating(j.user_rating);
 
     if (j.status === "completed") {
       try {
@@ -60,6 +65,19 @@ export default function JobDetailPage() {
 
   const latestProgress = job.progress.length ? job.progress[job.progress.length - 1] : undefined;
   const percent = latestProgress?.percent ?? 0;
+
+  const handleRate = async (stars: number) => {
+    if (!id || ratingBusy) return;
+    setRatingBusy(true);
+    try {
+      const updated = await rateJob(id, stars);
+      setRating(updated.user_rating);
+    } catch {
+      /* silent */
+    } finally {
+      setRatingBusy(false);
+    }
+  };
 
   const handleSync = async () => {
     if (!id) return;
@@ -98,6 +116,13 @@ export default function JobDetailPage() {
         {job.status === "completed" && (
           <div className="actions">
             <button type="button" onClick={() => id && openFolder(id)}>Open folder</button>
+          </div>
+        )}
+        {job.status === "completed" && (
+          <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <span className="muted">Rate output:</span>
+            <StarRating value={rating} onChange={handleRate} disabled={ratingBusy} />
+            {rating && <span className="muted">{rating}/5</span>}
           </div>
         )}
       </div>

@@ -49,6 +49,7 @@ class JobResponse(BaseModel):
     error: str | None = None
     models_used: list[str] = Field(default_factory=list)
     variants: list[str] = Field(default_factory=list)
+    user_rating: int | None = None
     created_at: datetime
     updated_at: datetime
 

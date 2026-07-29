@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     models_used TEXT NOT NULL DEFAULT '[]',
     variants TEXT NOT NULL DEFAULT '[]',
     config TEXT NOT NULL DEFAULT '{}',
+    user_rating INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -60,6 +61,7 @@ POSTGRES_STATEMENTS = [
         models_used TEXT NOT NULL DEFAULT '[]',
         variants TEXT NOT NULL DEFAULT '[]',
         config TEXT NOT NULL DEFAULT '{}',
+        user_rating INTEGER,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
@@ -87,6 +89,7 @@ POSTGRES_STATEMENTS = [
     )
     """,
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS storage_prefix TEXT",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_rating INTEGER",
 ]
 
 
@@ -116,6 +119,8 @@ async def init_db() -> None:
             cols = {row[1] for row in await cursor.fetchall()}
         if "storage_prefix" not in cols:
             await db.execute("ALTER TABLE jobs ADD COLUMN storage_prefix TEXT")
+        if "user_rating" not in cols:
+            await db.execute("ALTER TABLE jobs ADD COLUMN user_rating INTEGER")
         await db.commit()
 
 
@@ -236,6 +241,7 @@ def _row_to_job(row: aiosqlite.Row | dict) -> JobResponse:
         product_slug=row["product_slug"],
         output_path=row["output_path"],
         storage_prefix=row.get("storage_prefix") if isinstance(row, dict) else row["storage_prefix"],
+        user_rating=row.get("user_rating") if isinstance(row, dict) else (row["user_rating"] if "user_rating" in row.keys() else None),
         progress=progress,
         error=row["error"],
         models_used=json.loads(row["models_used"] or "[]"),

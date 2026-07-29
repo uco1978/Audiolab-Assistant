@@ -16,6 +16,7 @@ export interface Job {
   progress: JobProgress[];
   error: string | null;
   models_used: string[];
+  user_rating: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +154,16 @@ export async function createJob(body: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function rateJob(jobId: string, rating: number): Promise<Job> {
+  const res = await apiFetch(`/jobs/${jobId}/rate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rating }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
