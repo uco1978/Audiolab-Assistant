@@ -33,7 +33,6 @@ export default function JobDetailPage() {
   const [variantRatings, setVariantRatings] = useState<Record<string, number>>({});
   const [variantBusy, setVariantBusy] = useState<Record<string, boolean>>({});
   const [promotedVariant, setPromotedVariant] = useState<string | null>(null);
-  const [manifest, setManifest] = useState<{ primary_model?: string; compare_mode?: boolean } | null>(null);
 
   const fetchWithAuth = (url: string) => {
     const token = localStorage.getItem("ppc_access_token");
@@ -54,7 +53,6 @@ export default function JobDetailPage() {
     if (j.status === "completed") {
       try {
         const m = await fetchManifest(id);
-        setManifest(m);
         setImages(m.images || []);
         if (m.primary_model) setPromotedVariant(m.primary_model);
 
