@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchSettings, Settings, testProviderConnection, updateSettings } from "../api";
 
 type ProviderId = "gemini" | "groq" | "openrouter";
+const KEY_STORAGE_PREFIX = "ppc_provider_key_";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -47,6 +48,15 @@ export default function SettingsPage() {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    const restored: Record<ProviderId, string> = {
+      gemini: localStorage.getItem(`${KEY_STORAGE_PREFIX}gemini`) || "",
+      groq: localStorage.getItem(`${KEY_STORAGE_PREFIX}groq`) || "",
+      openrouter: localStorage.getItem(`${KEY_STORAGE_PREFIX}openrouter`) || "",
+    };
+    setKeys(restored);
+  }, []);
+
   const handleSave = async () => {
     const payload: Record<string, string | boolean> = { output_dir: outputDir };
     if (keys.gemini.trim()) payload.gemini_api_key = keys.gemini.trim();
@@ -60,6 +70,11 @@ export default function SettingsPage() {
 
   const providerLabel = (provider: ProviderId): string =>
     provider === "openrouter" ? "OpenRouter" : provider[0].toUpperCase() + provider.slice(1);
+
+  const setProviderKey = (provider: ProviderId, value: string) => {
+    setKeys((prev) => ({ ...prev, [provider]: value }));
+    localStorage.setItem(`${KEY_STORAGE_PREFIX}${provider}`, value);
+  };
 
   const runProviderTest = async (provider: ProviderId) => {
     setTesting((prev) => ({ ...prev, [provider]: true }));
@@ -113,7 +128,7 @@ export default function SettingsPage() {
             <input
               type="password"
               value={keys[provider]}
-              onChange={(e) => setKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
+              onChange={(e) => setProviderKey(provider, e.target.value)}
               placeholder={settings.providers[provider] ? "Configured (enter to replace)" : "Paste API key"}
             />
             <button type="button" onClick={() => runProviderTest(provider)} disabled={testing[provider]}>
