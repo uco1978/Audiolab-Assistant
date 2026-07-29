@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   CorpusSummary,
   fetchCorpus,
+  fetchStyleGuide,
   generateStyleGuide,
+  updateStyleGuide,
   uploadCorpus,
 } from "../api";
 
@@ -12,14 +14,33 @@ export default function TrainingPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [styleGuide, setStyleGuide] = useState("");
+  const [savedStyleGuide, setSavedStyleGuide] = useState("");
   const [styleGuideMeta, setStyleGuideMeta] = useState("");
   const [selectedCount, setSelectedCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const dirty = styleGuide !== savedStyleGuide;
 
   useEffect(() => {
     fetchCorpus().then((summary) => {
       setCorpus(summary);
     });
+    fetchStyleGuide()
+      .then((guide) => {
+        if (!guide) return;
+        setStyleGuide(guide.content);
+        setSavedStyleGuide(guide.content);
+        setStyleGuideMeta(
+          guide.model_used
+            ? `Last generated with ${guide.model_used}${
+                guide.samples_used != null ? ` from ${guide.samples_used} samples` : ""
+              }`
+            : "Loaded from server",
+        );
+      })
+      .catch(() => {
+        /* no guide yet */
+      });
   }, []);
 
   const handleUpload = async () => {
@@ -46,18 +67,40 @@ export default function TrainingPage() {
     setBusy(true);
     setError("");
     setMessage("Generating style guide… this can take 30–90 seconds.");
-    setStyleGuide("");
-    setStyleGuideMeta("");
     try {
       const result = await generateStyleGuide();
       setStyleGuide(result.content);
+      setSavedStyleGuide(result.content);
       setStyleGuideMeta(`Generated with ${result.model_used} from ${result.samples_used} samples`);
       setMessage(
-        `Done — style guide saved (${result.samples_used} samples, model: ${result.model_used}). Scroll down to read it.`,
+        result.storage_warning
+          ? `Done, but storage warning: ${result.storage_warning}`
+          : `Done — style guide saved (${result.samples_used} samples, model: ${result.model_used}).`,
       );
     } catch (err) {
       setMessage("");
       setError(err instanceof Error ? err.message : "Style guide generation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpdateStyleGuide = async () => {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await updateStyleGuide(styleGuide);
+      setStyleGuide(result.content);
+      setSavedStyleGuide(result.content);
+      setStyleGuideMeta("Updated on server");
+      setMessage(
+        result.storage_warning
+          ? `Updated locally, but storage warning: ${result.storage_warning}`
+          : "Style guide updated and uploaded to storage.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
     } finally {
       setBusy(false);
     }
@@ -69,7 +112,8 @@ export default function TrainingPage() {
         <h2>Brand Style Guide</h2>
         <p className="muted">
           Upload your product-copy files (.docx, .txt, .md, .html). Then generate a compact style
-          guide that cloud models will use for future product pages.
+          guide that cloud models will use for future product pages. Edit the guide below and click
+          Update to save changes to the server and R2.
         </p>
 
         <label>Product copy files</label>
@@ -99,22 +143,38 @@ export default function TrainingPage() {
         </div>
 
         {message && (
-          <p style={{ color: message.startsWith("Done") ? "var(--success, #2e7d32)" : undefined }} className="muted">
+          <p style={{ color: message.startsWith("Done") || message.startsWith("Style guide updated") || message.startsWith("Updated") ? "var(--success, #2e7d32)" : undefined }} className="muted">
             {message}
           </p>
         )}
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
       </div>
 
-      {styleGuide && (
-        <div className="card">
-          <h3>Generated Style Guide</h3>
-          {styleGuideMeta && <p className="muted">{styleGuideMeta}</p>}
-          <pre className="preview-block" style={{ whiteSpace: "pre-wrap", maxHeight: "28rem", overflow: "auto" }}>
-            {styleGuide}
-          </pre>
+      <div className="card">
+        <h3>Style Guide Editor</h3>
+        {styleGuideMeta ? (
+          <p className="muted">{styleGuideMeta}{dirty ? " · unsaved edits" : ""}</p>
+        ) : (
+          <p className="muted">No style guide yet. Generate one after uploading corpus files.</p>
+        )}
+        <textarea
+          value={styleGuide}
+          onChange={(e) => setStyleGuide(e.target.value)}
+          placeholder="Style guide text will appear here after generation…"
+          rows={18}
+          style={{ width: "100%", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", lineHeight: 1.45 }}
+          disabled={busy && message.startsWith("Generating")}
+        />
+        <div className="actions" style={{ marginTop: "0.75rem" }}>
+          <button
+            type="button"
+            disabled={busy || !dirty || !styleGuide.trim()}
+            onClick={handleUpdateStyleGuide}
+          >
+            {busy && !message.startsWith("Generating") ? "Updating…" : "Update"}
+          </button>
         </div>
-      )}
+      </div>
 
       {corpus && (
         <div className="card">

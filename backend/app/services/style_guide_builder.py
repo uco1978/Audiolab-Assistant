@@ -7,6 +7,79 @@ from app.config import get_settings
 from app.services.brand_tone import read_brand_file
 from app.services.training_corpus import load_corpus_summary
 
+STYLE_GUIDE_STORAGE_KEY = "brand/style-guide.txt"
+
+
+def style_guide_path() -> Path:
+    settings = get_settings()
+    return settings.brand_examples_dir / "style-guide.txt"
+
+
+def _persist_style_guide_to_storage(style_path: Path) -> str | None:
+    """Upload to R2 when configured. Returns warning string on failure, else None."""
+    settings = get_settings()
+    if settings.storage_backend.lower() != "s3":
+        return None
+    try:
+        from app.storage import get_storage
+
+        get_storage().upload_file(style_path, STYLE_GUIDE_STORAGE_KEY)
+        return None
+    except Exception as exc:
+        return f"Saved locally but failed to upload to object storage: {exc}"
+
+
+def save_style_guide_text(
+    content: str,
+    *,
+    model_used: str | None = None,
+    samples_used: int | None = None,
+) -> dict:
+    guide_text = content.strip()
+    if not guide_text:
+        raise ValueError("Style guide content cannot be empty")
+
+    style_path = style_guide_path()
+    style_path.parent.mkdir(parents=True, exist_ok=True)
+    style_path.write_text(guide_text + "\n", encoding="utf-8")
+    storage_warning = _persist_style_guide_to_storage(style_path)
+
+    return {
+        "ok": True,
+        "style_guide_path": str(style_path),
+        "model_used": model_used,
+        "samples_used": samples_used,
+        "content": guide_text,
+        "storage_key": STYLE_GUIDE_STORAGE_KEY,
+        "storage_warning": storage_warning,
+    }
+
+
+def load_style_guide() -> dict | None:
+    """Load style guide from local disk, restoring from R2 when needed."""
+    from app.services.brand_tone import _restore_style_guide_from_storage
+
+    settings = get_settings()
+    examples_dir = settings.brand_examples_dir
+    examples_dir.mkdir(parents=True, exist_ok=True)
+    _restore_style_guide_from_storage(examples_dir)
+
+    path = style_guide_path()
+    if not path.exists():
+        return None
+    content = path.read_text(encoding="utf-8").strip()
+    if not content:
+        return None
+    return {
+        "ok": True,
+        "style_guide_path": str(path),
+        "model_used": None,
+        "samples_used": None,
+        "content": content,
+        "storage_key": STYLE_GUIDE_STORAGE_KEY,
+        "storage_warning": None,
+    }
+
 
 def _collect_corpus_samples(max_files: int = 20, max_chars_per_file: int = 2500) -> list[str]:
     from app.services.training_corpus import ensure_local_uploaded_corpus
@@ -75,23 +148,8 @@ async def generate_style_guide_from_corpus(max_files: int = 20) -> dict:
         if guide_text.lower().startswith("text"):
             guide_text = guide_text[4:].strip()
 
-    style_path = settings.brand_examples_dir / "style-guide.txt"
-    style_path.parent.mkdir(parents=True, exist_ok=True)
-    style_path.write_text(guide_text + "\n", encoding="utf-8")
-
-    if settings.storage_backend.lower() == "s3":
-        try:
-            from app.storage import get_storage
-
-            get_storage().upload_file(style_path, "brand/style-guide.txt")
-        except Exception:
-            # Local style guide is enough for current runtime; R2 persist is best-effort.
-            pass
-
-    return {
-        "ok": True,
-        "style_guide_path": str(style_path),
-        "model_used": model_used,
-        "samples_used": len(samples),
-        "content": guide_text,
-    }
+    return save_style_guide_text(
+        guide_text,
+        model_used=model_used,
+        samples_used=len(samples),
+    )

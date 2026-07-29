@@ -55,7 +55,11 @@ from app.services.training_corpus import (
     save_uploaded_corpus_files,
     scan_corpus,
 )
-from app.services.style_guide_builder import generate_style_guide_from_corpus
+from app.services.style_guide_builder import (
+    generate_style_guide_from_corpus,
+    load_style_guide,
+    save_style_guide_text,
+)
 from app.secrets_store import (
     PROVIDER_FIELD_TO_ENV,
     apply_provider_secrets_to_runtime,
@@ -337,6 +341,27 @@ async def download_training_package():
         media_type="application/zip",
         filename=path.name,
     )
+
+
+@app.get("/api/training/style-guide")
+async def get_style_guide_endpoint():
+    guide = load_style_guide()
+    if not guide:
+        raise HTTPException(404, "No style guide saved yet. Generate one on the Training page.")
+    return guide
+
+
+@app.put("/api/training/style-guide")
+async def update_style_guide_endpoint(body: dict):
+    content = body.get("content")
+    if not isinstance(content, str):
+        raise HTTPException(400, "content must be a string")
+    try:
+        return save_style_guide_text(content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
 
 
 @app.post("/api/training/style-guide")

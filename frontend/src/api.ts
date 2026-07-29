@@ -130,9 +130,11 @@ export interface DatasetBuildResult {
 export interface StyleGuideResult {
   ok: boolean;
   style_guide_path: string;
-  model_used: string;
-  samples_used: number;
+  model_used?: string | null;
+  samples_used?: number | null;
   content: string;
+  storage_key?: string;
+  storage_warning?: string | null;
 }
 
 export interface QueueStats {
@@ -354,6 +356,23 @@ export async function buildDataset(): Promise<DatasetBuildResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ validation_ratio: 0.1, seed: 42 }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchStyleGuide(): Promise<StyleGuideResult | null> {
+  const res = await apiFetch(`/training/style-guide`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateStyleGuide(content: string): Promise<StyleGuideResult> {
+  const res = await apiFetch(`/training/style-guide`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
