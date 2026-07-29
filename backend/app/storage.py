@@ -71,17 +71,35 @@ class S3Storage(StorageBackend):
             raise RuntimeError("boto3 is required for S3 storage backend")
         if not settings.storage_bucket:
             raise RuntimeError("STORAGE_BUCKET is required for S3 storage backend")
-        self.bucket = settings.storage_bucket
+        from botocore.config import Config
+
+        access_key = (settings.storage_access_key_id or "").strip()
+        secret_key = (settings.storage_secret_access_key or "").strip()
+        endpoint = (settings.storage_endpoint_url or "").strip() or None
+        region = (settings.storage_region or "auto").strip() or "auto"
+        if not access_key or not secret_key:
+            raise RuntimeError("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY are required")
+
+        self.bucket = settings.storage_bucket.strip()
         self.client = boto3.client(
             "s3",
-            region_name=settings.storage_region,
-            endpoint_url=settings.storage_endpoint_url,
-            aws_access_key_id=settings.storage_access_key_id,
-            aws_secret_access_key=settings.storage_secret_access_key,
+            region_name=region,
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+            ),
         )
 
     def upload_file(self, local_path: Path, key: str) -> StoredObject:
-        self.client.upload_file(str(local_path), self.bucket, key)
+        try:
+            self.client.upload_file(str(local_path), self.bucket, key)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to upload {local_path.as_posix()} to {self.bucket}/{key}: {exc}"
+            ) from exc
         return StoredObject(key=key, url=self.signed_url(key))
 
     def read_bytes(self, key: str) -> bytes:

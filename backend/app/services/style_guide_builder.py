@@ -80,9 +80,13 @@ async def generate_style_guide_from_corpus(max_files: int = 20) -> dict:
     style_path.write_text(guide_text + "\n", encoding="utf-8")
 
     if settings.storage_backend.lower() == "s3":
-        from app.storage import get_storage
+        try:
+            from app.storage import get_storage
 
-        get_storage().upload_file(style_path, "brand/style-guide.txt")
+            get_storage().upload_file(style_path, "brand/style-guide.txt")
+        except Exception:
+            # Local style guide is enough for current runtime; R2 persist is best-effort.
+            pass
 
     return {
         "ok": True,
