@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
-    default_models: str = "openrouter/meta-llama/llama-3.3-70b-instruct:free,gemini/gemini-2.0-flash"
+    default_models: str = "openrouter/openrouter/free,gemini/gemini-2.5-flash,groq/llama-3.3-70b-versatile"
     model_fallback_chain: str = "openrouter,gemini,groq"
 
     enable_cloud_fallback: bool = False
@@ -108,8 +108,8 @@ class Settings(BaseSettings):
     def available_models(self) -> list[dict]:
         return [
             {
-                "id": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-                "label": "OpenRouter Llama 3.3 70B (Free)",
+                "id": "openrouter/openrouter/free",
+                "label": "OpenRouter Free Router",
                 "provider": "openrouter",
                 "tier": "free_tier",
                 "role": "text",
@@ -124,8 +124,8 @@ class Settings(BaseSettings):
                 "requires_key": "openrouter_api_key",
             },
             {
-                "id": "gemini/gemini-2.0-flash",
-                "label": "Gemini 2.0 Flash (Free Tier Quota)",
+                "id": "gemini/gemini-2.5-flash",
+                "label": "Gemini 2.5 Flash",
                 "provider": "gemini",
                 "tier": "free_tier",
                 "role": "text",

@@ -26,6 +26,13 @@ def provider_from_model(model_id: str) -> str:
     return "unknown"
 
 
+def litellm_model_name(model_id: str) -> str:
+    # Keep internal model ids provider-qualified, but pass provider-native names to LiteLLM where needed.
+    if model_id.startswith("openrouter/"):
+        return model_id.replace("openrouter/", "", 1)
+    return model_id
+
+
 async def completion(
     model_id: str,
     messages: list[dict[str, str]],
@@ -35,7 +42,7 @@ async def completion(
 
     _configure_litellm_env()
     kwargs: dict[str, Any] = {
-        "model": model_id,
+        "model": litellm_model_name(model_id),
         "messages": messages,
         "temperature": 0.3,
     }
@@ -56,13 +63,26 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
         raise RuntimeError(f"Unsupported provider: {provider}")
 
     settings = get_settings()
-    model = model_id
-    if not model:
+    if model_id:
+        candidates = [model_id]
+    elif provider == "openrouter":
+        candidates = [
+            "openrouter/openrouter/free",
+            "openrouter/openrouter/auto",
+            "openrouter/google/gemma-2-9b-it:free",
+        ]
+    elif provider == "gemini":
+        candidates = [
+            "gemini/gemini-2.5-flash",
+            "gemini/gemini-2.0-flash",
+        ]
+    else:
+        candidates = []
         for item in settings.available_models:
             if item["provider"] == provider:
-                model = item["id"]
+                candidates.append(item["id"])
                 break
-    if not model:
+    if not candidates:
         raise RuntimeError(f"No model configured for provider: {provider}")
 
     env_key_map = {
@@ -79,11 +99,28 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
 
     os.environ[env_key] = candidate_key
     try:
-        content = await completion(
-            model,
-            [{"role": "user", "content": "Reply with OK only."}],
-        )
-        return {"ok": True, "provider": provider, "model_id": model, "response": content[:60]}
+        last_error: Exception | None = None
+        for model in candidates:
+            try:
+                content = await completion(
+                    model,
+                    [{"role": "user", "content": "Reply with OK only."}],
+                )
+                return {"ok": True, "provider": provider, "model_id": model, "response": content[:60]}
+            except Exception as exc:
+                last_error = exc
+                continue
+        msg = compact_error_message(last_error) if last_error else "Unknown provider test error"
+        lower = msg.lower()
+        if "429" in lower or "quota" in lower or "rate" in lower:
+            raise RuntimeError(
+                f"{provider} key is valid, but current quota/rate limit is exhausted for tested models. Details: {msg}"
+            )
+        if "404" in lower or "not found" in lower or "unavailable" in lower:
+            raise RuntimeError(
+                f"{provider} key is valid, but the tested model is unavailable for this account tier. Details: {msg}"
+            )
+        raise RuntimeError(msg)
     finally:
         if fallback_val is None:
             os.environ.pop(env_key, None)
@@ -122,3 +159,10 @@ async def completion_with_fallback(
 def _is_rate_limit(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "429" in msg or "rate" in msg or "quota" in msg
+
+
+def compact_error_message(exc: Exception, max_len: int = 240) -> str:
+    text = " ".join(str(exc).split())
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
