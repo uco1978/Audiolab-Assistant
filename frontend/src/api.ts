@@ -283,6 +283,20 @@ export async function scanCorpus(folderPath: string): Promise<CorpusSummary> {
   return res.json();
 }
 
+export async function uploadCorpus(files: FileList | File[]): Promise<CorpusSummary> {
+  const form = new FormData();
+  const list = Array.from(files);
+  for (const file of list) {
+    form.append("files", file);
+  }
+  const res = await apiFetch(`/training/corpus/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function buildDataset(): Promise<DatasetBuildResult> {
   const res = await apiFetch(`/training/dataset`, {
     method: "POST",

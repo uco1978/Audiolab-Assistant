@@ -20,15 +20,19 @@ from app.services.brand_tone import BRAND_FILE_EXTENSIONS, read_brand_file
 from app.storage import get_storage
 
 TRAINING_DIR = PROJECT_ROOT / "data" / "training"
+UPLOADED_CORPUS_DIR = TRAINING_DIR / "uploaded-corpus"
 CORPUS_MANIFEST = TRAINING_DIR / "corpus-manifest.json"
 DATASET_JSONL = TRAINING_DIR / "dataset.jsonl"
 TRAIN_JSONL = TRAINING_DIR / "train.jsonl"
 VALIDATION_JSONL = TRAINING_DIR / "validation.jsonl"
 EXPORT_ZIP = TRAINING_DIR / "product-copy-training-package.zip"
 EXPORT_STORAGE_KEY = TRAINING_DIR / "product-copy-training-package.storage-key"
+CORPUS_STORAGE_PREFIX = "training/corpus"
+CORPUS_INDEX_KEY = f"{CORPUS_STORAGE_PREFIX}/_index.json"
 
 WORD_TEMP_PREFIX = "~$"
 MIN_COPY_CHARS = 200
+ALLOWED_UPLOAD_EXTENSIONS = {".txt", ".md", ".html", ".docx"}
 
 
 @dataclass
@@ -53,6 +57,82 @@ class CorpusSummary:
     duplicate_files: int
     issue_files: int
     items: list[CorpusItem]
+
+
+def uploaded_corpus_dir() -> Path:
+    UPLOADED_CORPUS_DIR.mkdir(parents=True, exist_ok=True)
+    return UPLOADED_CORPUS_DIR
+
+
+def ensure_local_uploaded_corpus() -> Path:
+    """Restore uploaded corpus from object storage when local disk is empty."""
+    local_dir = uploaded_corpus_dir()
+    existing = [p for p in local_dir.iterdir() if p.is_file() and not p.name.startswith(".")]
+    if existing:
+        return local_dir
+
+    settings = get_settings()
+    if settings.storage_backend.lower() != "s3":
+        return local_dir
+
+    storage = get_storage()
+    try:
+        index_raw = storage.read_bytes(CORPUS_INDEX_KEY).decode("utf-8")
+        filenames = json.loads(index_raw).get("files", [])
+    except Exception:
+        return local_dir
+
+    for name in filenames:
+        safe = Path(name).name
+        if Path(safe).suffix.lower() not in ALLOWED_UPLOAD_EXTENSIONS:
+            continue
+        try:
+            data = storage.read_bytes(f"{CORPUS_STORAGE_PREFIX}/{safe}")
+            (local_dir / safe).write_bytes(data)
+        except Exception:
+            continue
+    return local_dir
+
+
+def save_uploaded_corpus_files(files: list[tuple[str, bytes]], replace: bool = True) -> CorpusSummary:
+    """Save uploaded corpus files locally (and to S3 when configured), then scan."""
+    local_dir = uploaded_corpus_dir()
+    if replace:
+        for existing in local_dir.iterdir():
+            if existing.is_file():
+                existing.unlink()
+
+    saved_names: list[str] = []
+    for filename, content in files:
+        safe_name = Path(filename).name
+        suffix = Path(safe_name).suffix.lower()
+        if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
+            continue
+        if safe_name.startswith(WORD_TEMP_PREFIX) or safe_name.startswith("."):
+            continue
+        if not content:
+            continue
+        target = local_dir / safe_name
+        target.write_bytes(content)
+        saved_names.append(safe_name)
+
+    if not saved_names:
+        raise ValueError("No valid files uploaded. Use .docx, .txt, .md, or .html files.")
+
+    settings = get_settings()
+    if settings.storage_backend.lower() == "s3":
+        storage = get_storage()
+        for name in saved_names:
+            storage.upload_file(local_dir / name, f"{CORPUS_STORAGE_PREFIX}/{name}")
+        index_path = local_dir / "_index.json"
+        index_path.write_text(
+            json.dumps({"files": saved_names}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        storage.upload_file(index_path, CORPUS_INDEX_KEY)
+        index_path.unlink(missing_ok=True)
+
+    return scan_corpus(str(local_dir))
 
 
 def scan_corpus(folder_path: str) -> CorpusSummary:
@@ -128,18 +208,30 @@ def scan_corpus(folder_path: str) -> CorpusSummary:
 
 
 def load_corpus_summary() -> CorpusSummary | None:
-    if not CORPUS_MANIFEST.exists():
-        return None
-    data = json.loads(CORPUS_MANIFEST.read_text(encoding="utf-8"))
-    return CorpusSummary(
-        folder_path=data["folder_path"],
-        scanned_at=data["scanned_at"],
-        total_files=data["total_files"],
-        usable_files=data["usable_files"],
-        duplicate_files=data["duplicate_files"],
-        issue_files=data["issue_files"],
-        items=[CorpusItem(**item) for item in data["items"]],
-    )
+    local_dir = ensure_local_uploaded_corpus()
+    local_files = [p for p in local_dir.iterdir() if p.is_file() and _is_supported_file(p)]
+
+    if CORPUS_MANIFEST.exists():
+        data = json.loads(CORPUS_MANIFEST.read_text(encoding="utf-8"))
+        items = [CorpusItem(**item) for item in data["items"]]
+        # After cloud redeploy, absolute paths in the manifest may be stale.
+        if items and any(not Path(item.path).exists() for item in items if item.status == "usable"):
+            if local_files:
+                return scan_corpus(str(local_dir))
+        else:
+            return CorpusSummary(
+                folder_path=data["folder_path"],
+                scanned_at=data["scanned_at"],
+                total_files=data["total_files"],
+                usable_files=data["usable_files"],
+                duplicate_files=data["duplicate_files"],
+                issue_files=data["issue_files"],
+                items=items,
+            )
+
+    if local_files:
+        return scan_corpus(str(local_dir))
+    return None
 
 
 def build_dataset(validation_ratio: float = 0.1, seed: int = 42) -> dict:

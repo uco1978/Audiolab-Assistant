@@ -59,6 +59,7 @@ def _read_docx(path: Path) -> str:
 
 def _load_style_guide(examples_dir: Path) -> tuple[str, list[str]]:
     notes: list[str] = []
+    _restore_style_guide_from_storage(examples_dir)
     for name in STYLE_GUIDE_NAMES:
         path = examples_dir / name
         if not path.exists():
@@ -71,6 +72,22 @@ def _load_style_guide(examples_dir: Path) -> tuple[str, list[str]]:
         except Exception as exc:
             notes.append(f"Could not read {name}: {exc}")
     return "", notes
+
+
+def _restore_style_guide_from_storage(examples_dir: Path) -> None:
+    if any((examples_dir / name).exists() for name in STYLE_GUIDE_NAMES):
+        return
+    settings = get_settings()
+    if settings.storage_backend.lower() != "s3":
+        return
+    try:
+        from app.storage import get_storage
+
+        data = get_storage().read_bytes("brand/style-guide.txt")
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        (examples_dir / "style-guide.txt").write_bytes(data)
+    except Exception:
+        return
 
 
 def load_brand_context(max_examples: int | None = None) -> tuple[str, list[str]]:

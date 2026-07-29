@@ -9,13 +9,16 @@ from app.services.training_corpus import load_corpus_summary
 
 
 def _collect_corpus_samples(max_files: int = 20, max_chars_per_file: int = 2500) -> list[str]:
+    from app.services.training_corpus import ensure_local_uploaded_corpus
+
+    ensure_local_uploaded_corpus()
     summary = load_corpus_summary()
     if not summary:
-        raise FileNotFoundError("No corpus scan found. Scan your folder first on the Training page.")
+        raise FileNotFoundError("No corpus scan found. Upload product-copy files first on the Training page.")
 
     usable = [item for item in summary.items if item.status == "usable"]
     if not usable:
-        raise ValueError("No usable corpus files found. Scan a folder with product-copy texts first.")
+        raise ValueError("No usable corpus files found. Upload product-copy files first.")
 
     samples: list[str] = []
     for item in usable[:max_files]:
@@ -75,6 +78,11 @@ async def generate_style_guide_from_corpus(max_files: int = 20) -> dict:
     style_path = settings.brand_examples_dir / "style-guide.txt"
     style_path.parent.mkdir(parents=True, exist_ok=True)
     style_path.write_text(guide_text + "\n", encoding="utf-8")
+
+    if settings.storage_backend.lower() == "s3":
+        from app.storage import get_storage
+
+        get_storage().upload_file(style_path, "brand/style-guide.txt")
 
     return {
         "ok": True,

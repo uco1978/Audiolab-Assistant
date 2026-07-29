@@ -7,7 +7,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -50,6 +50,7 @@ from app.services.training_corpus import (
     create_training_export,
     get_training_export_storage_key,
     load_corpus_summary,
+    save_uploaded_corpus_files,
     scan_corpus,
 )
 from app.services.style_guide_builder import generate_style_guide_from_corpus
@@ -260,6 +261,23 @@ async def scan_training_corpus(body: CorpusScanRequest):
         return scan_corpus(body.folder_path)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.post("/api/training/corpus/upload", response_model=CorpusSummaryResponse)
+async def upload_training_corpus(files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+    payload: list[tuple[str, bytes]] = []
+    for upload in files:
+        name = upload.filename or "untitled.txt"
+        data = await upload.read()
+        payload.append((name, data))
+    try:
+        return save_uploaded_corpus_files(payload, replace=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
 

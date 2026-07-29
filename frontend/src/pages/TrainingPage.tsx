@@ -1,37 +1,42 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CorpusSummary,
   fetchCorpus,
   generateStyleGuide,
-  scanCorpus,
+  uploadCorpus,
 } from "../api";
 
 export default function TrainingPage() {
-  const [folderPath, setFolderPath] = useState("");
   const [corpus, setCorpus] = useState<CorpusSummary | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [styleGuide, setStyleGuide] = useState("");
   const [styleGuideMeta, setStyleGuideMeta] = useState("");
+  const [selectedCount, setSelectedCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchCorpus().then((summary) => {
       setCorpus(summary);
-      if (summary?.folder_path) setFolderPath(summary.folder_path);
     });
   }, []);
 
-  const handleScan = async () => {
+  const handleUpload = async () => {
+    const files = fileInputRef.current?.files;
+    if (!files || files.length === 0) {
+      setError("Select one or more .docx / .txt / .md / .html files first");
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const summary = await scanCorpus(folderPath);
+      const summary = await uploadCorpus(files);
       setCorpus(summary);
-      setMessage(`Scanned ${summary.total_files} files. ${summary.usable_files} usable.`);
+      setMessage(`Uploaded and scanned ${summary.total_files} files. ${summary.usable_files} usable.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Scan failed");
+      setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setBusy(false);
     }
@@ -58,20 +63,26 @@ export default function TrainingPage() {
       <div className="card">
         <h2>Brand Style Guide</h2>
         <p className="muted">
-          Point the app at your existing product-copy folder. Scan the texts, then generate a
-          compact style guide that cloud models will use for future product pages.
+          Upload your product-copy files (.docx, .txt, .md, .html). Then generate a compact style
+          guide that cloud models will use for future product pages.
         </p>
 
-        <label>Product copy folder path</label>
+        <label>Product copy files</label>
         <input
-          type="text"
-          value={folderPath}
-          onChange={(e) => setFolderPath(e.target.value)}
-          placeholder="C:\\Users\\urico\\Documents\\Product Copy"
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".docx,.txt,.md,.html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/html"
+          onChange={(e) => setSelectedCount(e.target.files?.length ?? 0)}
+          style={{ marginBottom: "0.75rem" }}
         />
+        {selectedCount > 0 && (
+          <p className="muted">{selectedCount} file{selectedCount === 1 ? "" : "s"} selected</p>
+        )}
+
         <div className="actions">
-          <button type="button" disabled={busy || !folderPath} onClick={handleScan}>
-            Scan folder
+          <button type="button" disabled={busy || selectedCount === 0} onClick={handleUpload}>
+            Upload &amp; scan
           </button>
           <button
             type="button"
@@ -104,7 +115,7 @@ export default function TrainingPage() {
             <Stat label="Issues" value={corpus.issue_files} />
           </div>
           <p className="muted">
-            Last scan: {new Date(corpus.scanned_at).toLocaleString()} · {corpus.folder_path}
+            Last scan: {new Date(corpus.scanned_at).toLocaleString()}
           </p>
 
           <div className="corpus-list">
