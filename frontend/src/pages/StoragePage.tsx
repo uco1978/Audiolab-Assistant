@@ -134,7 +134,21 @@ export default function StoragePage() {
       </nav>
 
       {message && <p className="muted">{message}</p>}
-      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
+      {error && (
+        <div style={{ color: "var(--danger)", marginBottom: "1rem" }}>
+          <p>{error}</p>
+          {error.includes("SignatureDoesNotMatch") && (
+            <p className="muted" style={{ color: "var(--muted)" }}>
+              This almost always means the R2 Access Key ID / Secret on Render are wrong or mismatched.
+              In Cloudflare: R2 → Manage R2 API Tokens → create token → copy Access Key ID and Secret
+              into Render env vars <code>STORAGE_ACCESS_KEY_ID</code> and{" "}
+              <code>STORAGE_SECRET_ACCESS_KEY</code> on both <code>ppc-backend</code> and{" "}
+              <code>ppc-worker</code>, then redeploy. Endpoint should be{" "}
+              <code>https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com</code>.
+            </p>
+          )}
+        </div>
+      )}
 
       {listing && (
         <>

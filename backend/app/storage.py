@@ -165,6 +165,26 @@ class LocalStorage(StorageBackend):
         return deleted
 
 
+def _clean_credential(value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
+def _normalize_r2_endpoint(endpoint: str | None, bucket: str) -> str | None:
+    if not endpoint:
+        return None
+    endpoint = endpoint.strip().rstrip("/")
+    # Common misconfig: paste public/dev URL or include bucket in the path.
+    if bucket and endpoint.endswith(f"/{bucket}"):
+        endpoint = endpoint[: -len(bucket) - 1].rstrip("/")
+    # Jurisdiction-specific R2 endpoints are fine; strip accidental query strings.
+    if "?" in endpoint:
+        endpoint = endpoint.split("?", 1)[0].rstrip("/")
+    return endpoint or None
+
+
 class S3Storage(StorageBackend):
     def __init__(self):
         settings = get_settings()
@@ -172,37 +192,47 @@ class S3Storage(StorageBackend):
             raise RuntimeError("boto3 is required for S3 storage backend")
         if not settings.storage_bucket:
             raise RuntimeError("STORAGE_BUCKET is required for S3 storage backend")
+        import os
+
         from botocore.config import Config
 
-        access_key = (settings.storage_access_key_id or "").strip()
-        secret_key = (settings.storage_secret_access_key or "").strip()
-        endpoint = (settings.storage_endpoint_url or "").strip().rstrip("/") or None
+        access_key = _clean_credential(settings.storage_access_key_id or "")
+        secret_key = _clean_credential(settings.storage_secret_access_key or "")
         region = (settings.storage_region or "auto").strip() or "auto"
         if not access_key or not secret_key:
             raise RuntimeError("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY are required")
 
-        # Avoid endpoint paths like .../bucket-name which break signing.
-        if endpoint and settings.storage_bucket.strip():
-            bucket = settings.storage_bucket.strip()
-            if endpoint.endswith(f"/{bucket}"):
-                endpoint = endpoint[: -len(bucket) - 1].rstrip("/")
-
         self.bucket = settings.storage_bucket.strip()
-        # Cloudflare R2 is incompatible with boto3's default checksum behavior (1.36+),
-        # which produces SignatureDoesNotMatch on ListObjects/PutObject.
+        self.endpoint = _normalize_r2_endpoint(settings.storage_endpoint_url, self.bucket)
+        self.access_key_id = access_key
+
+        # boto3 1.36+ checksum defaults break Cloudflare R2 signatures.
+        os.environ.setdefault("AWS_REQUEST_CHECKSUM_CALCULATION", "when_required")
+        os.environ.setdefault("AWS_RESPONSE_CHECKSUM_VALIDATION", "when_required")
+
+        # Match Cloudflare's documented boto3 client (no forced path-style).
         self.client = boto3.client(
-            "s3",
+            service_name="s3",
             region_name=region,
-            endpoint_url=endpoint,
+            endpoint_url=self.endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             config=Config(
                 signature_version="s3v4",
-                s3={"addressing_style": "path"},
                 request_checksum_calculation="when_required",
                 response_checksum_validation="when_required",
             ),
         )
+
+    def connection_info(self) -> dict:
+        return {
+            "bucket": self.bucket,
+            "endpoint": self.endpoint,
+            "access_key_id_prefix": self.access_key_id[:4] + "…" if len(self.access_key_id) > 4 else "set",
+            "access_key_id_length": len(self.access_key_id),
+            "secret_access_key_length": len(_clean_credential(get_settings().storage_secret_access_key or "")),
+            "region": (get_settings().storage_region or "auto").strip() or "auto",
+        }
 
     def upload_file(self, local_path: Path, key: str) -> StoredObject:
         try:

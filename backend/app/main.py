@@ -473,7 +473,15 @@ async def list_storage(prefix: str = ""):
     try:
         listing = get_storage().list_prefix(prefix)
     except Exception as exc:
-        raise HTTPException(500, str(exc)) from exc
+        detail = str(exc)
+        if "SignatureDoesNotMatch" in detail:
+            detail = (
+                f"{detail} Hint: regenerate Cloudflare R2 S3 API credentials and set "
+                "STORAGE_ACCESS_KEY_ID + STORAGE_SECRET_ACCESS_KEY on ppc-backend and ppc-worker. "
+                "STORAGE_ENDPOINT_URL must be https://<ACCOUNT_ID>.r2.cloudflarestorage.com "
+                "(no bucket in the path)."
+            )
+        raise HTTPException(500, detail) from exc
     return {
         "backend": settings.storage_backend,
         "bucket": settings.storage_bucket or None,
@@ -485,6 +493,34 @@ async def list_storage(prefix: str = ""):
         ],
         "total_bytes": listing.total_bytes,
     }
+
+
+@app.get("/api/storage/health")
+async def storage_health():
+    settings = get_settings()
+    storage = get_storage()
+    info: dict = {
+        "backend": settings.storage_backend,
+        "bucket": settings.storage_bucket or None,
+    }
+    if hasattr(storage, "connection_info"):
+        info.update(storage.connection_info())
+    try:
+        storage.list_prefix("")
+        return {"ok": True, **info}
+    except Exception as exc:
+        hint = None
+        msg = str(exc)
+        if "SignatureDoesNotMatch" in msg:
+            hint = (
+                "R2 rejected the signature. Create a new R2 API token with Object Read & Write, "
+                "copy Access Key ID + Secret Access Key into Render for ppc-backend and ppc-worker, "
+                "then redeploy. Do not use the Cloudflare account API token."
+            )
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": msg, "hint": hint, **info},
+        )
 
 
 @app.delete("/api/storage")
