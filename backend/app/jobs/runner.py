@@ -133,7 +133,7 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
                 job_id,
                 JobStep.PROCESS_IMAGES,
                 f"Processing image {idx}/{len(downloaded)}"
-                + (" (rembg)" if rembg_flag else ""),
+                + (" (bg removal)" if rembg_flag else ""),
                 pct,
             )
             processed.append(

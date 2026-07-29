@@ -44,6 +44,8 @@ export interface Settings {
   providers: Record<string, boolean>;
   provider_order: string[];
   rembg_enabled: boolean;
+  bg_removal_backend?: string;
+  effective_bg_removal_backend?: string;
   playwright_enabled: boolean;
   auth_enabled: boolean;
   storage_backend: string;

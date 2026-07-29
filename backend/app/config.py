@@ -42,14 +42,27 @@ class Settings(BaseSettings):
     output_dir: Path = Path.home() / "product-assets"
     playwright_enabled: bool = True
     rembg_enabled: bool = True
+    # clearbackdrop | rembg | auto (auto = ClearBackdrop in cloud, rembg locally)
+    bg_removal_backend: str = "auto"
     webp_quality: int = 90
     ai_image_selection: bool = True
 
     @property
-    def rembg_default_for_jobs(self) -> bool:
-        # Background removal OOMs on small cloud workers; keep opt-in there.
+    def effective_bg_removal_backend(self) -> str:
+        backend = (self.bg_removal_backend or "auto").strip().lower()
+        if backend in {"clearbackdrop", "rembg"}:
+            return backend
+        # auto
         if self.mode.lower() == "cloud" or self.app_env.lower() == "production":
-            return False
+            return "clearbackdrop"
+        return "rembg"
+
+    @property
+    def rembg_default_for_jobs(self) -> bool:
+        # Local rembg OOMs on small cloud workers; ClearBackdrop is safe there.
+        if self.mode.lower() == "cloud" or self.app_env.lower() == "production":
+            if self.effective_bg_removal_backend == "rembg":
+                return False
         return self.rembg_enabled
 
     database_path: Path = PROJECT_ROOT / "data" / "jobs.db"

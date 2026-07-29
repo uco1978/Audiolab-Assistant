@@ -257,6 +257,8 @@ async def get_settings_endpoint():
         "model_fallback_chain": s.model_fallback_chain,
         "playwright_enabled": s.playwright_enabled,
         "rembg_enabled": s.rembg_enabled,
+        "bg_removal_backend": s.bg_removal_backend,
+        "effective_bg_removal_backend": s.effective_bg_removal_backend,
         "webp_quality": s.webp_quality,
         "brand_examples_dir": str(s.brand_examples_dir),
         "brand_examples": examples,

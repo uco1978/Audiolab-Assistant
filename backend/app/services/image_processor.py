@@ -1,11 +1,22 @@
 import io
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 from PIL import Image
 
 from app.config import get_settings
 from app.services.image_downloader import DownloadedImage
+
+logger = logging.getLogger(__name__)
+
+CLEARBACKDROP_URL = "https://clearbackdrop.com/api/v1/remove-background"
+# ClearBackdrop allows 15MB; keep uploads reasonable for product shots.
+_CLOUD_MAX_SIDE = 2048
+_REMBG_MAX_SIDE = 1280
+
+_rembg_session = None
 
 
 @dataclass
@@ -18,10 +29,6 @@ class ProcessedImage:
     has_alpha: bool
     needs_review: bool
     review_reason: str | None = None
-
-
-_rembg_session = None
-_REMBG_MAX_SIDE = 1280
 
 
 def _get_rembg_session():
@@ -42,26 +49,61 @@ def _has_meaningful_alpha(img: Image.Image) -> bool:
     return extrema[0] < 250
 
 
-def _downscale_for_rembg(img: Image.Image) -> Image.Image:
-    """Shrink very large product shots before rembg to reduce RAM use."""
+def _downscale_for_removal(img: Image.Image, max_side: int) -> Image.Image:
+    """Shrink very large product shots before background removal."""
     w, h = img.size
     longest = max(w, h)
-    if longest <= _REMBG_MAX_SIDE:
+    if longest <= max_side:
         return img
-    scale = _REMBG_MAX_SIDE / float(longest)
+    scale = max_side / float(longest)
     size = (max(1, int(w * scale)), max(1, int(h * scale)))
     return img.resize(size, Image.Resampling.LANCZOS)
 
 
-def _remove_background(img: Image.Image) -> Image.Image:
+def _remove_background_clearbackdrop(img: Image.Image) -> Image.Image:
+    working = _downscale_for_removal(img.convert("RGBA"), _CLOUD_MAX_SIDE)
+    buf = io.BytesIO()
+    working.save(buf, format="PNG")
+    payload = buf.getvalue()
+    with httpx.Client(timeout=90.0, follow_redirects=False) as client:
+        response = client.post(
+            CLEARBACKDROP_URL,
+            files={"image": ("product.png", payload, "image/png")},
+        )
+    if response.status_code == 429:
+        remaining = response.headers.get("X-RateLimit-Remaining", "?")
+        reset = response.headers.get("X-RateLimit-Reset", "?")
+        raise RuntimeError(
+            f"ClearBackdrop rate limit hit (remaining={remaining}, reset_in={reset}s)"
+        )
+    if response.status_code >= 400:
+        detail = (response.text or "")[:200]
+        raise RuntimeError(f"ClearBackdrop HTTP {response.status_code}: {detail}")
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "image" not in content_type and not response.content.startswith(b"\x89PNG"):
+        raise RuntimeError(f"ClearBackdrop returned unexpected content-type: {content_type}")
+    return Image.open(io.BytesIO(response.content)).convert("RGBA")
+
+
+def _remove_background_rembg(img: Image.Image) -> Image.Image:
     from rembg import remove
 
     session = _get_rembg_session()
-    working = _downscale_for_rembg(img.convert("RGBA"))
+    working = _downscale_for_removal(img.convert("RGBA"), _REMBG_MAX_SIDE)
     buf = io.BytesIO()
     working.save(buf, format="PNG")
     result = remove(buf.getvalue(), session=session)
     return Image.open(io.BytesIO(result)).convert("RGBA")
+
+
+def _remove_background(img: Image.Image) -> Image.Image:
+    settings = get_settings()
+    backend = settings.effective_bg_removal_backend
+    if backend == "clearbackdrop":
+        logger.info("Background removal via ClearBackdrop")
+        return _remove_background_clearbackdrop(img)
+    logger.info("Background removal via local rembg")
+    return _remove_background_rembg(img)
 
 
 def _score_quality(original: Image.Image, processed: Image.Image) -> tuple[bool, str | None]:
@@ -110,7 +152,7 @@ def process_image(
     else:
         processed = working
         needs_review = True
-        review_reason = "No transparency and rembg disabled"
+        review_reason = "No transparency and background removal disabled"
 
     prefix = "01-hero" if index == 1 else f"{index:02d}-gallery"
     webp_path = dest_dir / f"{prefix}.webp"

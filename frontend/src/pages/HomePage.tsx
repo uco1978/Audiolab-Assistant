@@ -9,7 +9,7 @@ export default function HomePage() {
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [webSearch, setWebSearch] = useState(false);
   const [usePlaywright, setUsePlaywright] = useState(false);
-  const [rembgEnabled, setRembgEnabled] = useState(false);
+  const [rembgEnabled, setRembgEnabled] = useState(true);
   const [aiImages, setAiImages] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -92,7 +92,8 @@ export default function HomePage() {
             </label>
             <label>
               <input type="checkbox" checked={rembgEnabled} onChange={(e) => setRembgEnabled(e.target.checked)} />
-              Remove backgrounds (rembg)
+              Remove backgrounds
+              <span className="muted"> (ClearBackdrop in cloud)</span>
             </label>
             <label>
               <input type="checkbox" checked={usePlaywright} onChange={(e) => setUsePlaywright(e.target.checked)} />
