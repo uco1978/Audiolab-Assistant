@@ -342,6 +342,8 @@ async def generate_style_guide_endpoint(body: dict | None = None):
 
 @app.put("/api/settings")
 async def update_settings(body: SettingsUpdate):
+    import os
+
     env_path = PROJECT_ROOT / ".env"
     lines: dict[str, str] = {}
     if env_path.exists():
@@ -372,7 +374,11 @@ async def update_settings(body: SettingsUpdate):
     for field, env_key in mapping.items():
         if field in data:
             val = data[field]
-            lines[env_key] = str(val).lower() if isinstance(val, bool) else str(val)
+            rendered = str(val).lower() if isinstance(val, bool) else str(val)
+            lines[env_key] = rendered
+            # Apply immediately so this process sees keys without restart.
+            # On Render, also set the same vars in the Dashboard so they survive redeploys.
+            os.environ[env_key] = rendered
 
     env_path.write_text("\n".join(f"{k}={v}" for k, v in lines.items()) + "\n", encoding="utf-8")
     get_settings.cache_clear()

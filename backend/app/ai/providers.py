@@ -209,9 +209,11 @@ async def completion_with_fallback(
 
     last_error: Exception | None = None
     tried: list[str] = []
+    configured_any = False
     for model_id in ordered:
         if not settings.model_is_configured(model_id):
             continue
+        configured_any = True
         try:
             content = await completion(model_id, messages, response_format)
             return content, model_id, tried
@@ -225,6 +227,12 @@ async def completion_with_fallback(
             if _is_rate_limit(exc):
                 await asyncio.sleep(2)
             continue
+    if not configured_any:
+        raise RuntimeError(
+            "No cloud API keys configured on the server. "
+            "Add GEMINI_API_KEY or OPENROUTER_API_KEY in Render (ppc-backend + ppc-worker), "
+            "or paste a key in Settings and click Save."
+        )
     raise RuntimeError(f"All configured cloud models failed. Last error: {last_error}")
 
 

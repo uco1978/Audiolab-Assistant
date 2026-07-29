@@ -125,6 +125,11 @@ export default function SettingsPage() {
       </p>
 
       <h3>AI Providers</h3>
+      <p className="muted">
+        Paste at least one key (Gemini or OpenRouter recommended), then click <strong>Save</strong>.
+        Test alone is not enough — jobs and style-guide generation use server keys only.
+        On Render, set the same keys as env vars on <code>ppc-backend</code> and <code>ppc-worker</code> so they survive redeploys.
+      </p>
       {(settings.provider_order?.length ? settings.provider_order : Object.keys(settings.providers)).map((provider) => (
         <div key={provider} style={{ marginBottom: "0.9rem" }}>
           <label>{providerLabel(provider)} API key</label>
