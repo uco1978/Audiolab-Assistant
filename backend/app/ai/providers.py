@@ -1,9 +1,10 @@
 import asyncio
 import os
+import time
 from typing import Any
 
 from app.config import get_settings
-from app.db import record_ai_usage
+from app.db import record_ai_failure, record_ai_usage
 
 
 def _configure_litellm_env() -> None:
@@ -73,11 +74,17 @@ async def completion(
     if response_format:
         kwargs["response_format"] = response_format
 
+    t0 = time.perf_counter()
     response = await litellm.acompletion(**kwargs)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+
     content = response.choices[0].message.content or ""
     provider = provider_from_model(model_id)
-    tokens = getattr(response.usage, "total_tokens", 0) if response.usage else len(content) // 4
-    await record_ai_usage(provider, model_id, tokens)
+    usage = response.usage
+    total_tokens = getattr(usage, "total_tokens", 0) if usage else len(content) // 4
+    p_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+    c_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    await record_ai_usage(provider, model_id, total_tokens, latency_ms, p_tokens, c_tokens)
     return content
 
 
@@ -170,11 +177,27 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
             os.environ[env_key] = fallback_val
 
 
+def classify_error(exc: Exception) -> str:
+    msg = str(exc).lower()
+    if "429" in msg or "rate" in msg or "quota" in msg:
+        return "RateLimit"
+    if "401" in msg or "auth" in msg or "invalid api key" in msg or "invalid x-api-key" in msg:
+        return "AuthError"
+    if "404" in msg or "not found" in msg or "unavailable" in msg or "does not exist" in msg:
+        return "ModelUnavailable"
+    if "timeout" in msg or "timed out" in msg:
+        return "Timeout"
+    if "content_filter" in msg or "content filter" in msg or "safety" in msg:
+        return "ContentFilter"
+    return "Unknown"
+
+
 async def completion_with_fallback(
     model_ids: list[str],
     messages: list[dict[str, str]],
     response_format: dict | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, list[str]]:
+    """Returns (content, winning_model_id, fallback_models_tried)."""
     settings = get_settings()
     chain = [p.strip() for p in settings.model_fallback_chain.split(",") if p.strip()]
     ordered = list(model_ids)
@@ -185,13 +208,20 @@ async def completion_with_fallback(
                     ordered.append(model["id"])
 
     last_error: Exception | None = None
+    tried: list[str] = []
     for model_id in ordered:
         if not settings.model_is_configured(model_id):
             continue
         try:
-            return await completion(model_id, messages, response_format), model_id
+            content = await completion(model_id, messages, response_format)
+            return content, model_id, tried
         except Exception as exc:
             last_error = exc
+            tried.append(model_id)
+            t0_fail = time.perf_counter()
+            err_class = classify_error(exc)
+            latency = int((time.perf_counter() - t0_fail) * 1000) or 1
+            await record_ai_failure(provider_from_model(model_id), model_id, latency, err_class)
             if _is_rate_limit(exc):
                 await asyncio.sleep(2)
             continue

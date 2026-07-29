@@ -18,7 +18,11 @@ from app.config import PROJECT_ROOT, get_settings
 from app.db import (
     create_job,
     enqueue_job,
+    get_ai_usage_summary,
     get_job,
+    get_model_ratings_summary,
+    get_recent_errors,
+    get_recent_jobs_diagnostics,
     init_db,
     list_jobs,
     queue_stats,
@@ -451,6 +455,17 @@ async def sync_woocommerce(job_id: str, body: WooCommerceSyncRequest):
         return {"ok": True, "product": result}
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
+
+
+@app.get("/api/admin/diagnostics")
+async def full_diagnostics():
+    return {
+        "queue": await queue_stats(),
+        "ai_usage": await get_ai_usage_summary(),
+        "model_ratings": await get_model_ratings_summary(),
+        "recent_errors": await get_recent_errors(20),
+        "recent_jobs": await get_recent_jobs_diagnostics(10),
+    }
 
 
 @app.get("/api/admin/queue", response_model=QueueStatsResponse)

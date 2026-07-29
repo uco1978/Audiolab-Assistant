@@ -17,6 +17,8 @@ export interface Job {
   error: string | null;
   models_used: string[];
   user_rating: number | null;
+  timing: Record<string, number>;
+  fallback_models: string[];
   created_at: string;
   updated_at: string;
 }
@@ -261,6 +263,67 @@ export async function downloadTrainingPackage(): Promise<Blob> {
   const res = await apiFetch(`/training/export/download`);
   if (!res.ok) throw new Error(await res.text());
   return res.blob();
+}
+
+export interface ProviderUsageStat {
+  provider: string;
+  calls: number;
+  failures: number;
+  avg_latency_ms: number;
+  total_tokens: number;
+}
+
+export interface ModelUsageStat {
+  model: string;
+  calls: number;
+  failures: number;
+  avg_latency_ms: number;
+  total_tokens: number;
+}
+
+export interface UsagePeriod {
+  by_provider: ProviderUsageStat[];
+  by_model: ModelUsageStat[];
+  total_calls: number;
+  total_failures: number;
+}
+
+export interface ModelRating {
+  model: string;
+  avg_rating: number;
+  rated_jobs: number;
+}
+
+export interface RecentError {
+  provider: string;
+  model: string;
+  error_class: string;
+  created_at: string;
+}
+
+export interface RecentJobDiag {
+  id: string;
+  url: string;
+  status: string;
+  models_used: string[];
+  user_rating: number | null;
+  timing: Record<string, number>;
+  fallback_models: string[];
+  created_at: string;
+}
+
+export interface DiagnosticsData {
+  queue: QueueStats;
+  ai_usage: { last_24h: UsagePeriod; last_7d: UsagePeriod };
+  model_ratings: ModelRating[];
+  recent_errors: RecentError[];
+  recent_jobs: RecentJobDiag[];
+}
+
+export async function fetchDiagnostics(): Promise<DiagnosticsData> {
+  const res = await apiFetch(`/admin/diagnostics`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function fetchQueueStats(): Promise<QueueStats> {

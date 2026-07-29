@@ -125,7 +125,7 @@ Candidates:
 {json.dumps(items, ensure_ascii=False, indent=2)}"""
 
     try:
-        raw, _ = await completion_with_fallback(
+        raw, _, _tried = await completion_with_fallback(
             settings.default_model_ids,
             [
                 {"role": "system", "content": "Filter product images. Return valid JSON only."},

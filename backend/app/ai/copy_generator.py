@@ -58,6 +58,11 @@ class GeneratedCopy:
     seo: dict[str, Any]
     raw_json: dict[str, Any]
     brand_notes: list[str]
+    fallback_models_tried: list[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.fallback_models_tried is None:
+            self.fallback_models_tried = []
 
 
 def _format_specs(specs: dict[str, str]) -> str:
@@ -103,7 +108,7 @@ async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_text, used_model = await completion_with_fallback(settings.default_model_ids, messages)
+    raw_text, used_model, _tried = await completion_with_fallback(settings.default_model_ids, messages)
     data = _extract_json(raw_text)
     description = _wrap_ltr_codes(data.get("description_html_he", ""))
 
@@ -116,4 +121,5 @@ async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
         seo=data.get("seo", {}),
         raw_json=data,
         brand_notes=brand_notes,
+        fallback_models_tried=_tried,
     )

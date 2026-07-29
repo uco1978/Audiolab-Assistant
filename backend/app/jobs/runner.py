@@ -1,4 +1,5 @@
 import tempfile
+import time
 from pathlib import Path
 
 from app.ai.copy_generator import generate_copy
@@ -20,6 +21,8 @@ from app.storage import get_storage
 async def run_job(job_id: str, url: str, config: dict) -> None:
     settings = get_settings()
     await update_job(job_id, status=JobStatus.RUNNING.value)
+    job_t0 = time.perf_counter()
+    timing: dict[str, int] = {}
 
     try:
         await _progress(job_id, JobStep.VALIDATE, "Validating cloud AI configuration", 5)
@@ -27,6 +30,7 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         html: str | None = None
         use_playwright = config.get("use_playwright", False) and settings.playwright_enabled
 
+        t0 = time.perf_counter()
         await _progress(job_id, JobStep.SCRAPE, "Fetching product page", 15)
         try:
             html = await fetch_page_html(url)
@@ -64,12 +68,14 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
                             k, v = k.strip(), v.strip()
                             if k and v and k not in product.specs:
                                 product.specs[k] = v
+        timing["scrape_ms"] = int((time.perf_counter() - t0) * 1000)
 
         slug = product_slug(product)
         work_dir = Path(tempfile.mkdtemp(prefix=f"ppc-local-{slug}-"))
         raw_images_dir = work_dir / "raw-images"
         processed_images_dir = work_dir / "processed-images"
 
+        t0 = time.perf_counter()
         use_ai_images = config.get("ai_image_selection", True)
         await _progress(job_id, JobStep.DOWNLOAD_IMAGES, "Selecting product images (local AI)", 40)
         selected_images, image_notes = await select_product_images(
@@ -89,7 +95,9 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
             process_image(dl, processed_images_dir, idx, rembg_enabled=config.get("rembg_enabled"))
             for idx, dl in enumerate(downloaded, start=1)
         ]
+        timing["images_ms"] = int((time.perf_counter() - t0) * 1000)
 
+        t0 = time.perf_counter()
         await _progress(
             job_id,
             JobStep.GENERATE_COPY,
@@ -98,7 +106,9 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         )
         copy = await generate_copy(product)
         product.source_notes.extend(copy.brand_notes)
+        timing["ai_copy_ms"] = int((time.perf_counter() - t0) * 1000)
 
+        t0 = time.perf_counter()
         await _progress(job_id, JobStep.EXPORT, "Exporting product folder", 90)
         product_dir = export_product(
             output_root=Path(settings.output_dir),
@@ -113,6 +123,8 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         if settings.storage_backend.lower() == "s3":
             storage_prefix = f"jobs/{job_id}"
             get_storage().upload_directory(product_dir, storage_prefix)
+        timing["export_ms"] = int((time.perf_counter() - t0) * 1000)
+        timing["total_ms"] = int((time.perf_counter() - job_t0) * 1000)
 
         await update_job(
             job_id,
@@ -122,11 +134,14 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
             storage_prefix=storage_prefix,
             models_used=[copy.model_id],
             variants=[],
+            timing=timing,
+            fallback_models=copy.fallback_models_tried,
         )
         await _progress(job_id, JobStep.DONE, "Complete", 100, {"output_path": str(product_dir)})
 
     except Exception as exc:
-        await update_job(job_id, status=JobStatus.FAILED.value, error=str(exc))
+        timing["total_ms"] = int((time.perf_counter() - job_t0) * 1000)
+        await update_job(job_id, status=JobStatus.FAILED.value, error=str(exc), timing=timing)
         await _progress(job_id, JobStep.DONE, f"Failed: {exc}", 100)
 
 
