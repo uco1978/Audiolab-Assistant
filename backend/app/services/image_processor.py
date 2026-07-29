@@ -21,6 +21,7 @@ class ProcessedImage:
 
 
 _rembg_session = None
+_REMBG_MAX_SIDE = 1280
 
 
 def _get_rembg_session():
@@ -28,7 +29,8 @@ def _get_rembg_session():
     if _rembg_session is None:
         from rembg import new_session
 
-        _rembg_session = new_session("u2net")
+        # u2netp is much smaller than u2net — safer on Render starter memory.
+        _rembg_session = new_session("u2netp")
     return _rembg_session
 
 
@@ -40,12 +42,24 @@ def _has_meaningful_alpha(img: Image.Image) -> bool:
     return extrema[0] < 250
 
 
+def _downscale_for_rembg(img: Image.Image) -> Image.Image:
+    """Shrink very large product shots before rembg to reduce RAM use."""
+    w, h = img.size
+    longest = max(w, h)
+    if longest <= _REMBG_MAX_SIDE:
+        return img
+    scale = _REMBG_MAX_SIDE / float(longest)
+    size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return img.resize(size, Image.Resampling.LANCZOS)
+
+
 def _remove_background(img: Image.Image) -> Image.Image:
     from rembg import remove
 
     session = _get_rembg_session()
+    working = _downscale_for_rembg(img.convert("RGBA"))
     buf = io.BytesIO()
-    img.convert("RGBA").save(buf, format="PNG")
+    working.save(buf, format="PNG")
     result = remove(buf.getvalue(), session=session)
     return Image.open(io.BytesIO(result)).convert("RGBA")
 

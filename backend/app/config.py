@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     webp_quality: int = 90
     ai_image_selection: bool = True
 
+    @property
+    def rembg_default_for_jobs(self) -> bool:
+        # Background removal OOMs on small cloud workers; keep opt-in there.
+        if self.mode.lower() == "cloud" or self.app_env.lower() == "production":
+            return False
+        return self.rembg_enabled
+
     database_path: Path = PROJECT_ROOT / "data" / "jobs.db"
     database_url: str | None = None
     storage_backend: str = "local"

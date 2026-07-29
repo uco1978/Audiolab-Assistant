@@ -9,7 +9,7 @@ export default function HomePage() {
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [webSearch, setWebSearch] = useState(false);
   const [usePlaywright, setUsePlaywright] = useState(false);
-  const [rembgEnabled, setRembgEnabled] = useState(true);
+  const [rembgEnabled, setRembgEnabled] = useState(false);
   const [aiImages, setAiImages] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

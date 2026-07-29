@@ -428,10 +428,13 @@ async def update_settings(body: SettingsUpdate):
 
 @app.post("/api/jobs", response_model=JobResponse)
 async def create_job_endpoint(body: CreateJobRequest):
+    rembg = body.rembg_enabled
+    if rembg is None:
+        rembg = settings.rembg_default_for_jobs
     config = {
         "web_search": body.web_search,
         "use_playwright": body.use_playwright,
-        "rembg_enabled": body.rembg_enabled,
+        "rembg_enabled": rembg,
         "ai_image_selection": body.ai_image_selection,
     }
     job_id = await create_job(str(body.url), config)

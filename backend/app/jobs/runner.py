@@ -122,10 +122,23 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         downloaded = await download_images(product.images, raw_images_dir)
 
         await _progress(job_id, JobStep.PROCESS_IMAGES, "Processing images to WebP", 58)
-        processed = [
-            process_image(dl, processed_images_dir, idx, rembg_enabled=config.get("rembg_enabled"))
-            for idx, dl in enumerate(downloaded, start=1)
-        ]
+        rembg_flag = config.get("rembg_enabled")
+        if rembg_flag is None:
+            rembg_flag = settings.rembg_default_for_jobs
+        processed = []
+        total_imgs = max(len(downloaded), 1)
+        for idx, dl in enumerate(downloaded, start=1):
+            pct = 58 + int(10 * (idx - 1) / total_imgs)
+            await _progress(
+                job_id,
+                JobStep.PROCESS_IMAGES,
+                f"Processing image {idx}/{len(downloaded)}"
+                + (" (rembg)" if rembg_flag else ""),
+                pct,
+            )
+            processed.append(
+                process_image(dl, processed_images_dir, idx, rembg_enabled=rembg_flag)
+            )
         timing["images_ms"] = int((time.perf_counter() - t0) * 1000)
 
         t0 = time.perf_counter()

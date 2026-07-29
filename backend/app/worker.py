@@ -3,7 +3,15 @@ import json
 import logging
 
 from app.config import get_settings
-from app.db import claim_next_queue_job, complete_queue_job, fail_queue_job, get_job, init_db, update_job
+from app.db import (
+    claim_next_queue_job,
+    complete_queue_job,
+    fail_queue_job,
+    get_job,
+    init_db,
+    reclaim_orphaned_running_queue,
+    update_job,
+)
 from app.jobs.runner import run_job
 from app.models import JobStatus
 from app.secrets_store import apply_provider_secrets_to_runtime
@@ -14,6 +22,9 @@ log = logging.getLogger("ppc.worker")
 async def worker_loop() -> None:
     await init_db()
     await apply_provider_secrets_to_runtime()
+    reclaimed = await reclaim_orphaned_running_queue()
+    if reclaimed:
+        log.warning("Reclaimed %s orphaned running queue item(s) after restart", reclaimed)
     settings = get_settings()
     log.info("Worker started (poll=%ss)", settings.worker_poll_seconds)
     while True:

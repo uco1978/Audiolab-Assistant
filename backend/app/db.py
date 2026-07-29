@@ -588,6 +588,95 @@ async def fail_queue_job(queue_id: str, attempts: int, max_attempts: int) -> Non
         await db.commit()
 
 
+async def reclaim_orphaned_running_queue() -> int:
+    """
+    On worker start, any queue item still marked running was abandoned by a crash/restart.
+    Re-queue when attempts remain; otherwise fail the job.
+    """
+    now = _now()
+    reclaimed = 0
+    if _is_postgres():
+        conn = await asyncpg.connect(get_settings().database_url)  # type: ignore[arg-type]
+        try:
+            rows = await conn.fetch(
+                "SELECT id, job_id, attempts, max_attempts FROM job_queue WHERE status = 'running'"
+            )
+            for row in rows:
+                queue_id = row["id"]
+                job_id = row["job_id"]
+                attempts = int(row["attempts"] or 1)
+                max_attempts = int(row["max_attempts"] or 2)
+                if attempts >= max_attempts:
+                    await conn.execute(
+                        "UPDATE job_queue SET status = 'failed', updated_at = $1 WHERE id = $2",
+                        now,
+                        queue_id,
+                    )
+                    await conn.execute(
+                        "UPDATE jobs SET status = $1, error = $2, updated_at = $3 WHERE id = $4 AND status = 'running'",
+                        JobStatus.FAILED.value,
+                        "Worker restarted while processing images (likely out of memory during rembg).",
+                        now,
+                        job_id,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE job_queue SET status = 'pending', updated_at = $1, run_after = $2 WHERE id = $3",
+                        now,
+                        now,
+                        queue_id,
+                    )
+                    await conn.execute(
+                        "UPDATE jobs SET status = $1, error = $2, updated_at = $3 WHERE id = $4 AND status = 'running'",
+                        JobStatus.PENDING.value,
+                        "Retrying after worker restart.",
+                        now,
+                        job_id,
+                    )
+                reclaimed += 1
+        finally:
+            await conn.close()
+        return reclaimed
+
+    async with aiosqlite.connect(get_settings().database_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, job_id, attempts, max_attempts FROM job_queue WHERE status = 'running'"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        for row in rows:
+            queue_id = row["id"]
+            job_id = row["job_id"]
+            attempts = int(row["attempts"] or 1)
+            max_attempts = int(row["max_attempts"] or 2)
+            if attempts >= max_attempts:
+                await db.execute(
+                    "UPDATE job_queue SET status = 'failed', updated_at = ? WHERE id = ?",
+                    (now, queue_id),
+                )
+                await db.execute(
+                    "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+                    (
+                        JobStatus.FAILED.value,
+                        "Worker restarted while processing images (likely out of memory during rembg).",
+                        now,
+                        job_id,
+                    ),
+                )
+            else:
+                await db.execute(
+                    "UPDATE job_queue SET status = 'pending', updated_at = ?, run_after = ? WHERE id = ?",
+                    (now, now, queue_id),
+                )
+                await db.execute(
+                    "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+                    (JobStatus.PENDING.value, "Retrying after worker restart.", now, job_id),
+                )
+            reclaimed += 1
+        await db.commit()
+    return reclaimed
+
+
 async def queue_stats() -> dict[str, int]:
     out = {"pending": 0, "running": 0, "failed": 0, "completed": 0}
     if _is_postgres():
