@@ -14,6 +14,18 @@ def _configure_litellm_env() -> None:
         os.environ["GROQ_API_KEY"] = settings.groq_api_key
     if settings.openrouter_api_key:
         os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+    if settings.openai_api_key:
+        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+    if settings.anthropic_api_key:
+        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+    if settings.cohere_api_key:
+        os.environ["COHERE_API_KEY"] = settings.cohere_api_key
+    if settings.mistral_api_key:
+        os.environ["MISTRAL_API_KEY"] = settings.mistral_api_key
+    if settings.perplexity_api_key:
+        os.environ["PERPLEXITY_API_KEY"] = settings.perplexity_api_key
+    if settings.xai_api_key:
+        os.environ["XAI_API_KEY"] = settings.xai_api_key
 
 
 def provider_from_model(model_id: str) -> str:
@@ -23,6 +35,18 @@ def provider_from_model(model_id: str) -> str:
         return "groq"
     if model_id.startswith("openrouter/"):
         return "openrouter"
+    if model_id.startswith("openai/"):
+        return "openai"
+    if model_id.startswith("anthropic/"):
+        return "anthropic"
+    if model_id.startswith("cohere/"):
+        return "cohere"
+    if model_id.startswith("mistral/"):
+        return "mistral"
+    if model_id.startswith("perplexity/"):
+        return "perplexity"
+    if model_id.startswith("xai/"):
+        return "xai"
     return "unknown"
 
 
@@ -59,10 +83,10 @@ async def completion(
 
 async def test_provider_connection(provider: str, api_key: str | None = None, model_id: str | None = None) -> dict[str, Any]:
     provider = provider.strip().lower()
-    if provider not in {"gemini", "groq", "openrouter"}:
+    settings = get_settings()
+    if provider not in settings.provider_key_fields:
         raise RuntimeError(f"Unsupported provider: {provider}")
 
-    settings = get_settings()
     if model_id:
         candidates = [model_id]
     elif provider == "openrouter":
@@ -76,6 +100,18 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
             "gemini/gemini-2.5-flash",
             "gemini/gemini-2.0-flash",
         ]
+    elif provider == "openai":
+        candidates = ["openai/gpt-4o-mini", "openai/gpt-4.1-mini"]
+    elif provider == "anthropic":
+        candidates = ["anthropic/claude-3-5-haiku-latest", "anthropic/claude-3-5-sonnet-latest"]
+    elif provider == "cohere":
+        candidates = ["cohere/command-r-plus", "cohere/command-r"]
+    elif provider == "mistral":
+        candidates = ["mistral/mistral-large-latest", "mistral/mistral-small-latest"]
+    elif provider == "perplexity":
+        candidates = ["perplexity/sonar-pro", "perplexity/sonar"]
+    elif provider == "xai":
+        candidates = ["xai/grok-2-1212"]
     else:
         candidates = []
         for item in settings.available_models:
@@ -89,6 +125,12 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
         "gemini": "GEMINI_API_KEY",
         "groq": "GROQ_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "cohere": "COHERE_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "perplexity": "PERPLEXITY_API_KEY",
+        "xai": "XAI_API_KEY",
     }
     env_key = env_key_map[provider]
     fallback_val = os.environ.get(env_key)

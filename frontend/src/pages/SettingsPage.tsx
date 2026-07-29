@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
 import { fetchSettings, Settings, testProviderConnection, updateSettings } from "../api";
 
-type ProviderId = "gemini" | "groq" | "openrouter";
 const KEY_STORAGE_PREFIX = "ppc_provider_key_";
+const API_KEY_FIELD_BY_PROVIDER: Record<string, string> = {
+  gemini: "gemini_api_key",
+  groq: "groq_api_key",
+  openrouter: "openrouter_api_key",
+  openai: "openai_api_key",
+  anthropic: "anthropic_api_key",
+  cohere: "cohere_api_key",
+  mistral: "mistral_api_key",
+  perplexity: "perplexity_api_key",
+  xai: "xai_api_key",
+};
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -10,21 +20,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [keys, setKeys] = useState<Record<ProviderId, string>>({
-    gemini: "",
-    groq: "",
-    openrouter: "",
-  });
-  const [testing, setTesting] = useState<Record<ProviderId, boolean>>({
-    gemini: false,
-    groq: false,
-    openrouter: false,
-  });
-  const [testStatus, setTestStatus] = useState<Record<ProviderId, string>>({
-    gemini: "",
-    groq: "",
-    openrouter: "",
-  });
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
 
   const loadSettings = async () => {
     setLoading(true);
@@ -49,34 +47,40 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    const restored: Record<ProviderId, string> = {
-      gemini: localStorage.getItem(`${KEY_STORAGE_PREFIX}gemini`) || "",
-      groq: localStorage.getItem(`${KEY_STORAGE_PREFIX}groq`) || "",
-      openrouter: localStorage.getItem(`${KEY_STORAGE_PREFIX}openrouter`) || "",
-    };
+    const restored: Record<string, string> = {};
+    for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
+      restored[provider] = localStorage.getItem(`${KEY_STORAGE_PREFIX}${provider}`) || "";
+    }
     setKeys(restored);
   }, []);
 
   const handleSave = async () => {
     const payload: Record<string, string | boolean> = { output_dir: outputDir };
-    if (keys.gemini.trim()) payload.gemini_api_key = keys.gemini.trim();
-    if (keys.groq.trim()) payload.groq_api_key = keys.groq.trim();
-    if (keys.openrouter.trim()) payload.openrouter_api_key = keys.openrouter.trim();
+    for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
+      const keyVal = (keys[provider] || "").trim();
+      if (keyVal) {
+        payload[API_KEY_FIELD_BY_PROVIDER[provider]] = keyVal;
+      }
+    }
     const s = await updateSettings(payload);
     setSettings(s);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const providerLabel = (provider: ProviderId): string =>
-    provider === "openrouter" ? "OpenRouter" : provider[0].toUpperCase() + provider.slice(1);
+  const providerLabel = (provider: string): string => {
+    if (provider === "openrouter") return "OpenRouter";
+    if (provider === "openai") return "OpenAI";
+    if (provider === "xai") return "xAI";
+    return provider[0].toUpperCase() + provider.slice(1);
+  };
 
-  const setProviderKey = (provider: ProviderId, value: string) => {
+  const setProviderKey = (provider: string, value: string) => {
     setKeys((prev) => ({ ...prev, [provider]: value }));
     localStorage.setItem(`${KEY_STORAGE_PREFIX}${provider}`, value);
   };
 
-  const runProviderTest = async (provider: ProviderId) => {
+  const runProviderTest = async (provider: string) => {
     setTesting((prev) => ({ ...prev, [provider]: true }));
     setTestStatus((prev) => ({ ...prev, [provider]: "" }));
     try {
@@ -121,17 +125,17 @@ export default function SettingsPage() {
       </p>
 
       <h3>AI Providers</h3>
-      {(["gemini", "groq", "openrouter"] as ProviderId[]).map((provider) => (
+      {(settings.provider_order?.length ? settings.provider_order : Object.keys(settings.providers)).map((provider) => (
         <div key={provider} style={{ marginBottom: "0.9rem" }}>
           <label>{providerLabel(provider)} API key</label>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <input
               type="password"
-              value={keys[provider]}
+              value={keys[provider] || ""}
               onChange={(e) => setProviderKey(provider, e.target.value)}
               placeholder={settings.providers[provider] ? "Configured (enter to replace)" : "Paste API key"}
             />
-            <button type="button" onClick={() => runProviderTest(provider)} disabled={testing[provider]}>
+            <button type="button" onClick={() => runProviderTest(provider)} disabled={testing[provider] === true}>
               {testing[provider] ? "Testing..." : "Test"}
             </button>
             <span className="muted">{settings.providers[provider] ? "Configured" : "Missing key"}</span>

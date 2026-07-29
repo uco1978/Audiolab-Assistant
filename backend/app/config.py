@@ -26,8 +26,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    cohere_api_key: str = ""
+    mistral_api_key: str = ""
+    perplexity_api_key: str = ""
+    xai_api_key: str = ""
     default_models: str = "openrouter/openrouter/free,gemini/gemini-2.5-flash,groq/llama-3.3-70b-versatile"
-    model_fallback_chain: str = "openrouter,gemini,groq"
+    model_fallback_chain: str = "openrouter,gemini,groq,openai,anthropic,mistral,cohere,perplexity,xai"
 
     enable_cloud_fallback: bool = False
     brand_examples_dir: Path = PROJECT_ROOT / "brand-examples"
@@ -155,7 +161,85 @@ class Settings(BaseSettings):
                 "role": "text",
                 "requires_key": "openrouter_api_key",
             },
+            {
+                "id": "openai/gpt-4o-mini",
+                "label": "OpenAI GPT-4o Mini",
+                "provider": "openai",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "openai_api_key",
+            },
+            {
+                "id": "openai/gpt-4.1",
+                "label": "OpenAI GPT-4.1",
+                "provider": "openai",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "openai_api_key",
+            },
+            {
+                "id": "anthropic/claude-3-5-sonnet-latest",
+                "label": "Anthropic Claude 3.5 Sonnet",
+                "provider": "anthropic",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "anthropic_api_key",
+            },
+            {
+                "id": "anthropic/claude-3-5-haiku-latest",
+                "label": "Anthropic Claude 3.5 Haiku",
+                "provider": "anthropic",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "anthropic_api_key",
+            },
+            {
+                "id": "cohere/command-r-plus",
+                "label": "Cohere Command R+",
+                "provider": "cohere",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "cohere_api_key",
+            },
+            {
+                "id": "mistral/mistral-large-latest",
+                "label": "Mistral Large Latest",
+                "provider": "mistral",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "mistral_api_key",
+            },
+            {
+                "id": "perplexity/sonar-pro",
+                "label": "Perplexity Sonar Pro",
+                "provider": "perplexity",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "perplexity_api_key",
+            },
+            {
+                "id": "xai/grok-2-1212",
+                "label": "xAI Grok 2",
+                "provider": "xai",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "xai_api_key",
+            },
         ]
+
+    @property
+    def provider_key_fields(self) -> dict[str, str]:
+        return {
+            "gemini": "gemini_api_key",
+            "groq": "groq_api_key",
+            "openrouter": "openrouter_api_key",
+            "openai": "openai_api_key",
+            "anthropic": "anthropic_api_key",
+            "cohere": "cohere_api_key",
+            "mistral": "mistral_api_key",
+            "perplexity": "perplexity_api_key",
+            "xai": "xai_api_key",
+        }
 
     def model_is_configured(self, model_id: str) -> bool:
         for model in self.available_models:

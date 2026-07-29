@@ -57,6 +57,12 @@ class SettingsUpdate(BaseModel):
     gemini_api_key: str | None = None
     groq_api_key: str | None = None
     openrouter_api_key: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    cohere_api_key: str | None = None
+    mistral_api_key: str | None = None
+    perplexity_api_key: str | None = None
+    xai_api_key: str | None = None
     default_models: str | None = None
     model_fallback_chain: str | None = None
     output_dir: str | None = None

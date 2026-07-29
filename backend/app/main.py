@@ -177,11 +177,7 @@ async def auth_me(request: Request):
 @app.get("/api/ai/status")
 async def ai_status():
     s = get_settings()
-    providers = {
-        "gemini": bool(s.gemini_api_key),
-        "groq": bool(s.groq_api_key),
-        "openrouter": bool(s.openrouter_api_key),
-    }
+    providers = {name: bool(getattr(s, key_field, "")) for name, key_field in s.provider_key_fields.items()}
     configured_models = [m["id"] for m in s.available_models if s.model_is_configured(m["id"])]
     return {
         "ok": len(configured_models) > 0,
@@ -221,11 +217,7 @@ async def list_models():
 @app.get("/api/settings")
 async def get_settings_endpoint():
     s = get_settings()
-    providers = {
-        "gemini": bool(s.gemini_api_key),
-        "groq": bool(s.groq_api_key),
-        "openrouter": bool(s.openrouter_api_key),
-    }
+    providers = {name: bool(getattr(s, key_field, "")) for name, key_field in s.provider_key_fields.items()}
     examples = []
     if s.brand_examples_dir.exists():
         examples = [
@@ -247,6 +239,7 @@ async def get_settings_endpoint():
         "auth_enabled": s.auth_enabled,
         "storage_backend": s.storage_backend,
         "providers": providers,
+        "provider_order": list(s.provider_key_fields.keys()),
     }
 
 
@@ -322,6 +315,12 @@ async def update_settings(body: SettingsUpdate):
         "gemini_api_key": "GEMINI_API_KEY",
         "groq_api_key": "GROQ_API_KEY",
         "openrouter_api_key": "OPENROUTER_API_KEY",
+        "openai_api_key": "OPENAI_API_KEY",
+        "anthropic_api_key": "ANTHROPIC_API_KEY",
+        "cohere_api_key": "COHERE_API_KEY",
+        "mistral_api_key": "MISTRAL_API_KEY",
+        "perplexity_api_key": "PERPLEXITY_API_KEY",
+        "xai_api_key": "XAI_API_KEY",
         "default_models": "DEFAULT_MODELS",
         "model_fallback_chain": "MODEL_FALLBACK_CHAIN",
         "output_dir": "OUTPUT_DIR",

@@ -22,11 +22,7 @@ export interface Job {
 
 export interface AiStatus {
   ok: boolean;
-  providers: {
-    gemini: boolean;
-    groq: boolean;
-    openrouter: boolean;
-  };
+  providers: Record<string, boolean>;
   configured_models: string[];
   fallback_chain: string;
   default_models: string[];
@@ -40,11 +36,8 @@ export interface Settings {
   model_fallback_chain: string;
   brand_examples_dir: string;
   brand_examples: string[];
-  providers: {
-    gemini: boolean;
-    groq: boolean;
-    openrouter: boolean;
-  };
+  providers: Record<string, boolean>;
+  provider_order: string[];
   rembg_enabled: boolean;
   playwright_enabled: boolean;
   auth_enabled: boolean;
@@ -183,7 +176,7 @@ export async function updateSettings(data: Record<string, string | boolean>): Pr
 }
 
 export async function testProviderConnection(data: {
-  provider: "gemini" | "groq" | "openrouter";
+  provider: string;
   api_key?: string;
   model_id?: string;
 }): Promise<ProviderTestResult> {
