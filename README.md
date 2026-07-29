@@ -1,13 +1,14 @@
-# Product Page Creator — Local Edition (Cloud-Ready)
+# Product Page Creator — Cloud Edition
 
-Local-first pipeline using **Ollama** on your laptop, now with a production path for managed cloud deployment.
+Cloud-hosted pipeline using managed model providers (Gemini, Groq, OpenRouter), with production deployment support.
 
-## Models (recommended)
+## AI providers
 
-```powershell
-ollama pull qwen2.5:7b-instruct
-ollama pull qwen2.5vl:7b
-```
+Configure at least one API key:
+
+- `GEMINI_API_KEY`
+- `GROQ_API_KEY`
+- `OPENROUTER_API_KEY`
 
 ## Quick start
 
@@ -79,11 +80,7 @@ The ZIP is created under `data/training/` and includes:
 This is Phase 1 only: it prepares the corpus and export package. Training/importing
 the resulting LoRA model is Phase 2.
 
-## AMD GPU tuning
-
-See [SETUP-AMD.md](SETUP-AMD.md) for Radeon 890M acceleration.
-
 ## vs parent folder
 
-The parent `Product page creator` folder supports cloud AI (Gemini, Groq, etc.).
-This `local-edition` subfolder is **Ollama-only** — no API keys required.
+The parent `Product page creator` folder is the original workspace.
+This `local-edition` subfolder now runs as a cloud-provider deployment target.

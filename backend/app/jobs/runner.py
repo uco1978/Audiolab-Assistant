@@ -2,7 +2,6 @@ import tempfile
 from pathlib import Path
 
 from app.ai.copy_generator import generate_copy
-from app.ai.ollama_client import ensure_model_pulled, ollama_health, unload_model
 from app.config import get_settings
 from app.db import append_progress, update_job
 from app.models import JobProgressEvent, JobStatus, JobStep
@@ -23,18 +22,7 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
     await update_job(job_id, status=JobStatus.RUNNING.value)
 
     try:
-        await _progress(job_id, JobStep.VALIDATE, "Checking Ollama", 3)
-        health = await ollama_health()
-        if not health["ok"]:
-            raise RuntimeError(
-                "Ollama is not running. Start Ollama, then run: ollama pull qwen2.5:7b-instruct"
-            )
-
-        await _progress(job_id, JobStep.VALIDATE, "Ensuring local models are ready", 5)
-        if not await ensure_model_pulled(settings.text_model):
-            raise RuntimeError(f"Could not pull text model: {settings.text_model}")
-        if config.get("ai_image_selection", True):
-            await ensure_model_pulled(settings.vision_model)
+        await _progress(job_id, JobStep.VALIDATE, "Validating cloud AI configuration", 5)
 
         html: str | None = None
         use_playwright = config.get("use_playwright", False) and settings.playwright_enabled
@@ -105,12 +93,11 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         await _progress(
             job_id,
             JobStep.GENERATE_COPY,
-            f"Generating Hebrew copy ({settings.text_model})",
+            "Generating Hebrew copy (cloud provider chain)",
             72,
         )
         copy = await generate_copy(product)
         product.source_notes.extend(copy.brand_notes)
-        await unload_model(settings.text_model)
 
         await _progress(job_id, JobStep.EXPORT, "Exporting product folder", 90)
         product_dir = export_product(

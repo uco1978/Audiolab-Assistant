@@ -1,5 +1,5 @@
 """
-Select main product images — heuristics + local Ollama text + Qwen-VL vision.
+Select main product images using heuristics + cloud LLM metadata ranking.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import re
 import httpx
 from PIL import Image
 
-from app.ai.ollama_client import text_completion, unload_model, vision_score
+from app.ai.providers import completion_with_fallback
 from app.config import get_settings
 from app.scrapers.generic import ScrapedImage
 
@@ -125,8 +125,8 @@ Candidates:
 {json.dumps(items, ensure_ascii=False, indent=2)}"""
 
     try:
-        raw = await text_completion(
-            settings.text_model,
+        raw, _ = await completion_with_fallback(
+            settings.default_model_ids,
             [
                 {"role": "system", "content": "Filter product images. Return valid JSON only."},
                 {"role": "user", "content": prompt},
@@ -145,31 +145,9 @@ Candidates:
     return list(range(min(len(candidates), MAX_PRODUCT_IMAGES)))
 
 
-async def _vision_score_ollama(
-    product_title: str,
-    candidates: list[ScrapedImage],
-    indices: list[int],
-) -> list[int]:
-    settings = get_settings()
-    scored: list[tuple[int, float]] = []
-
-    for idx in indices[:MAX_FOR_VISION]:
-        img = candidates[idx]
-        b64 = await _fetch_thumbnail_b64(img.url)
-        if not b64:
-            scored.append((idx, img.heuristic_score))
-            continue
-        try:
-            score, is_product = await vision_score(settings.vision_model, product_title, b64)
-            if not is_product:
-                score = min(score, 3)
-            scored.append((idx, score))
-        except Exception:
-            scored.append((idx, img.heuristic_score))
-
-    await unload_model(settings.vision_model)
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return [i for i, s in scored if s >= 5][:MAX_PRODUCT_IMAGES] or indices
+async def _vision_score_disabled(indices: list[int]) -> list[int]:
+    # Vision-model scoring is disabled in cloud-only mode; keep metadata+heuristic order.
+    return indices
 
 
 async def select_product_images(
@@ -198,8 +176,8 @@ async def select_product_images(
     notes.append(f"Ollama text ranking: {len(indices)} candidates")
 
     if use_vision:
-        indices = await _vision_score_ollama(product_title, pool, indices)
-        notes.append(f"Ollama vision ({get_settings().vision_model}): {len(indices)} product photos")
+        indices = await _vision_score_disabled(indices)
+        notes.append("Vision scoring disabled in cloud mode; using metadata ranking only")
 
     selected = [pool[i] for i in indices if i < len(pool)]
     if not selected:

@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.ai.ollama_client import text_completion
+from app.ai.providers import completion_with_fallback
 from app.config import get_settings
 from app.scrapers.generic import ScrapedProduct
 from app.services.brand_tone import load_brand_context
@@ -103,12 +103,12 @@ async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
         {"role": "user", "content": user_prompt},
     ]
 
-    raw_text = await text_completion(settings.text_model, messages)
+    raw_text, used_model = await completion_with_fallback(settings.default_model_ids, messages)
     data = _extract_json(raw_text)
     description = _wrap_ltr_codes(data.get("description_html_he", ""))
 
     return GeneratedCopy(
-        model_id=settings.text_model_litellm,
+        model_id=used_model,
         title_he=data.get("title_he", product.title),
         description_html_he=description,
         short_description_he=data.get("short_description_he", ""),

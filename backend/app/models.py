@@ -54,9 +54,11 @@ class JobResponse(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    ollama_base_url: str | None = None
-    text_model: str | None = None
-    vision_model: str | None = None
+    gemini_api_key: str | None = None
+    groq_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    default_models: str | None = None
+    model_fallback_chain: str | None = None
     output_dir: str | None = None
     brand_examples_dir: str | None = None
     playwright_enabled: bool | None = None

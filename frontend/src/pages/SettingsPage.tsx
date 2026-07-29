@@ -51,27 +51,25 @@ export default function SettingsPage() {
 
   return (
     <div className="card">
-      <h2>Settings — Local Edition</h2>
+      <h2>Settings — Cloud Edition</h2>
       <p className="muted">
         Environment: <code>{settings.app_env}</code> · Storage: <code>{settings.storage_backend}</code> · Auth:{" "}
         <code>{settings.auth_enabled ? "enabled" : "disabled"}</code>
       </p>
 
-      <h3>Ollama</h3>
+      <h3>AI Providers</h3>
       <p className="muted">
-        Status: {settings.ollama_ok ? "Running" : "Not running"}
+        Gemini: {settings.providers.gemini ? "Configured" : "Missing key"}
         <br />
-        Text: <code>{settings.text_model}</code>
+        Groq: {settings.providers.groq ? "Configured" : "Missing key"}
         <br />
-        Vision: <code>{settings.vision_model}</code>
+        OpenRouter: {settings.providers.openrouter ? "Configured" : "Missing key"}
       </p>
-      {settings.ollama_models.length > 0 && (
-        <ul className="muted">
-          {settings.ollama_models.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
-        </ul>
-      )}
+      <p className="muted">
+        Default models: <code>{settings.default_models}</code>
+        <br />
+        Fallback chain: <code>{settings.model_fallback_chain}</code>
+      </p>
 
       <h3>Brand tone</h3>
       <p className="muted">
@@ -96,7 +94,7 @@ export default function SettingsPage() {
       <input type="text" value={outputDir} onChange={(e) => setOutputDir(e.target.value)} />
 
       <p className="muted" style={{ marginTop: "1rem" }}>
-        GPU tuning for Radeon 890M: see <code>SETUP-AMD.md</code> in the project folder.
+        This deployment is cloud-provider based; Ollama is removed from runtime paths.
       </p>
 
       <button type="button" onClick={handleSave}>

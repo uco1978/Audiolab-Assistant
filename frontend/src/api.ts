@@ -20,27 +20,31 @@ export interface Job {
   updated_at: string;
 }
 
-export interface OllamaStatus {
+export interface AiStatus {
   ok: boolean;
-  models: string[];
-  text_model: string;
-  vision_model: string;
-  text_ready: boolean;
-  vision_ready: boolean;
-  error?: string;
+  providers: {
+    gemini: boolean;
+    groq: boolean;
+    openrouter: boolean;
+  };
+  configured_models: string[];
+  fallback_chain: string;
+  default_models: string[];
 }
 
 export interface Settings {
   mode: string;
   app_env: string;
   output_dir: string;
-  text_model: string;
-  vision_model: string;
-  ollama_base_url: string;
+  default_models: string;
+  model_fallback_chain: string;
   brand_examples_dir: string;
   brand_examples: string[];
-  ollama_ok: boolean;
-  ollama_models: string[];
+  providers: {
+    gemini: boolean;
+    groq: boolean;
+    openrouter: boolean;
+  };
   rembg_enabled: boolean;
   playwright_enabled: boolean;
   auth_enabled: boolean;
@@ -124,8 +128,8 @@ export interface QueueStats {
   completed: number;
 }
 
-export async function fetchOllamaStatus(): Promise<OllamaStatus> {
-  const res = await apiFetch(`/ollama/status`);
+export async function fetchAiStatus(): Promise<AiStatus> {
+  const res = await apiFetch(`/ai/status`);
   return res.json();
 }
 

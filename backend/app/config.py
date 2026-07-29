@@ -18,14 +18,16 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Product Page Creator"
     app_version: str = "2.0.0"
-    ollama_base_url: str = "http://localhost:11434"
     frontend_url: str = "http://localhost:5174"
     cors_allowed_origins: str = "http://localhost:5174,http://127.0.0.1:5174,http://localhost:5173,http://127.0.0.1:5173"
     trusted_hosts: str = "localhost,127.0.0.1"
     request_max_mb: int = 30
 
-    text_model: str = "qwen2.5:7b-instruct"
-    vision_model: str = "qwen2.5vl:7b"
+    gemini_api_key: str = ""
+    groq_api_key: str = ""
+    openrouter_api_key: str = ""
+    default_models: str = "openrouter/meta-llama/llama-3.3-70b-instruct:free,gemini/gemini-2.0-flash"
+    model_fallback_chain: str = "openrouter,gemini,groq"
 
     enable_cloud_fallback: bool = False
     brand_examples_dir: Path = PROJECT_ROOT / "brand-examples"
@@ -83,8 +85,8 @@ class Settings(BaseSettings):
         return p if p.is_absolute() else PROJECT_ROOT / p
 
     @property
-    def text_model_litellm(self) -> str:
-        return f"ollama/{self.text_model}"
+    def default_model_ids(self) -> list[str]:
+        return [m.strip() for m in self.default_models.split(",") if m.strip()]
 
     @property
     def cors_origins(self) -> list[str]:
@@ -106,21 +108,63 @@ class Settings(BaseSettings):
     def available_models(self) -> list[dict]:
         return [
             {
-                "id": self.text_model_litellm,
-                "label": f"Text: {self.text_model}",
-                "provider": "ollama",
+                "id": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+                "label": "OpenRouter Llama 3.3 70B (Free)",
+                "provider": "openrouter",
+                "tier": "free_tier",
                 "role": "text",
+                "requires_key": "openrouter_api_key",
             },
             {
-                "id": f"ollama/{self.vision_model}",
-                "label": f"Vision: {self.vision_model}",
-                "provider": "ollama",
-                "role": "vision",
+                "id": "openrouter/google/gemma-2-9b-it:free",
+                "label": "OpenRouter Gemma 2 9B (Free)",
+                "provider": "openrouter",
+                "tier": "free_tier",
+                "role": "text",
+                "requires_key": "openrouter_api_key",
+            },
+            {
+                "id": "gemini/gemini-2.0-flash",
+                "label": "Gemini 2.0 Flash (Free Tier Quota)",
+                "provider": "gemini",
+                "tier": "free_tier",
+                "role": "text",
+                "requires_key": "gemini_api_key",
+            },
+            {
+                "id": "groq/llama-3.3-70b-versatile",
+                "label": "Groq Llama 3.3 70B",
+                "provider": "groq",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "groq_api_key",
+            },
+            {
+                "id": "gemini/gemini-2.5-pro",
+                "label": "Gemini 2.5 Pro",
+                "provider": "gemini",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "gemini_api_key",
+            },
+            {
+                "id": "openrouter/anthropic/claude-3.5-sonnet",
+                "label": "OpenRouter Claude 3.5 Sonnet",
+                "provider": "openrouter",
+                "tier": "premium",
+                "role": "text",
+                "requires_key": "openrouter_api_key",
             },
         ]
 
     def model_is_configured(self, model_id: str) -> bool:
-        return model_id.startswith("ollama/")
+        for model in self.available_models:
+            if model["id"] == model_id:
+                key_name = model.get("requires_key")
+                if not key_name:
+                    return True
+                return bool(getattr(self, key_name, ""))
+        return False
 
 
 @lru_cache

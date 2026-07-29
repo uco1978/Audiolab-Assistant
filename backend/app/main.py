@@ -13,7 +13,6 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from app.auth import authenticate, create_access_token, decode_access_token
-from app.ai.ollama_client import ollama_health
 from app.config import PROJECT_ROOT, get_settings
 from app.db import (
     create_job,
@@ -173,29 +172,38 @@ async def auth_me(request: Request):
     return AuthUserResponse(email=user.get("sub", "unknown"), role=user.get("role", "admin"))
 
 
-@app.get("/api/ollama/status")
-async def ollama_status():
+@app.get("/api/ai/status")
+async def ai_status():
     s = get_settings()
-    health = await ollama_health()
+    providers = {
+        "gemini": bool(s.gemini_api_key),
+        "groq": bool(s.groq_api_key),
+        "openrouter": bool(s.openrouter_api_key),
+    }
+    configured_models = [m["id"] for m in s.available_models if s.model_is_configured(m["id"])]
     return {
-        **health,
-        "text_model": s.text_model,
-        "vision_model": s.vision_model,
-        "text_ready": any(s.text_model in m for m in health.get("models", [])),
-        "vision_ready": any(s.vision_model in m for m in health.get("models", [])),
+        "ok": len(configured_models) > 0,
+        "providers": providers,
+        "configured_models": configured_models,
+        "fallback_chain": s.model_fallback_chain,
+        "default_models": s.default_model_ids,
     }
 
 
 @app.get("/api/models")
 async def list_models():
     s = get_settings()
-    return [{**m, "configured": True} for m in s.available_models]
+    return [{**m, "configured": s.model_is_configured(m["id"])} for m in s.available_models]
 
 
 @app.get("/api/settings")
 async def get_settings_endpoint():
     s = get_settings()
-    ollama = await ollama_health()
+    providers = {
+        "gemini": bool(s.gemini_api_key),
+        "groq": bool(s.groq_api_key),
+        "openrouter": bool(s.openrouter_api_key),
+    }
     examples = []
     if s.brand_examples_dir.exists():
         examples = [
@@ -207,9 +215,8 @@ async def get_settings_endpoint():
         "mode": settings.mode,
         "app_env": settings.app_env,
         "output_dir": str(s.output_dir),
-        "text_model": s.text_model,
-        "vision_model": s.vision_model,
-        "ollama_base_url": s.ollama_base_url,
+        "default_models": s.default_models,
+        "model_fallback_chain": s.model_fallback_chain,
         "playwright_enabled": s.playwright_enabled,
         "rembg_enabled": s.rembg_enabled,
         "webp_quality": s.webp_quality,
@@ -217,8 +224,7 @@ async def get_settings_endpoint():
         "brand_examples": examples,
         "auth_enabled": s.auth_enabled,
         "storage_backend": s.storage_backend,
-        "ollama_ok": ollama.get("ok", False),
-        "ollama_models": ollama.get("models", []),
+        "providers": providers,
     }
 
 
@@ -291,9 +297,11 @@ async def update_settings(body: SettingsUpdate):
                 lines[k.strip()] = v.strip()
 
     mapping = {
-        "ollama_base_url": "OLLAMA_BASE_URL",
-        "text_model": "TEXT_MODEL",
-        "vision_model": "VISION_MODEL",
+        "gemini_api_key": "GEMINI_API_KEY",
+        "groq_api_key": "GROQ_API_KEY",
+        "openrouter_api_key": "OPENROUTER_API_KEY",
+        "default_models": "DEFAULT_MODELS",
+        "model_fallback_chain": "MODEL_FALLBACK_CHAIN",
         "output_dir": "OUTPUT_DIR",
         "playwright_enabled": "PLAYWRIGHT_ENABLED",
         "rembg_enabled": "REMBG_ENABLED",

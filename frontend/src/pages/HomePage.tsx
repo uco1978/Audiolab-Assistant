@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createJob, fetchOllamaStatus, OllamaStatus } from "../api";
+import { AiStatus, createJob, fetchAiStatus } from "../api";
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [url, setUrl] = useState("");
-  const [ollama, setOllama] = useState<OllamaStatus | null>(null);
+  const [ai, setAi] = useState<AiStatus | null>(null);
   const [webSearch, setWebSearch] = useState(false);
   const [usePlaywright, setUsePlaywright] = useState(false);
   const [rembgEnabled, setRembgEnabled] = useState(true);
@@ -14,8 +14,8 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchOllamaStatus().then(setOllama);
-    const t = setInterval(() => fetchOllamaStatus().then(setOllama), 10000);
+    fetchAiStatus().then(setAi);
+    const t = setInterval(() => fetchAiStatus().then(setAi), 15000);
     return () => clearInterval(t);
   }, []);
 
@@ -42,20 +42,17 @@ export default function HomePage() {
   return (
     <>
       <div className="card">
-        <h2>Local Edition — Ollama only</h2>
+        <h2>Cloud Edition — Multi-provider AI</h2>
         <p className="muted">
-          Runs <strong>qwen2.5:7b-instruct</strong> for Hebrew copy and{" "}
-          <strong>qwen2.5vl:7b</strong> for product image selection. No cloud API keys.
+          Uses cloud model providers with fallback routing. Configure API keys in Settings.
         </p>
-        {ollama && (
+        {ai && (
           <div className="muted" style={{ marginTop: "0.5rem" }}>
-            Ollama: {ollama.ok ? "✓ running" : "✗ not running — start Ollama app"}
-            {ollama.ok && (
+            AI providers: {ai.ok ? "✓ ready" : "✗ no configured cloud models"}
+            {ai.ok && (
               <>
                 <br />
-                Text model: {ollama.text_ready ? "✓" : "✗ pull qwen2.5:7b-instruct"}
-                {" · "}
-                Vision: {ollama.vision_ready ? "✓" : "✗ pull qwen2.5vl:7b"}
+                Models configured: {ai.configured_models.length}
               </>
             )}
           </div>
@@ -77,7 +74,7 @@ export default function HomePage() {
           <div className="checkbox-row">
             <label>
               <input type="checkbox" checked={aiImages} onChange={(e) => setAiImages(e.target.checked)} />
-              AI product image selection (local vision)
+              AI product image selection (metadata ranking)
             </label>
             <label>
               <input type="checkbox" checked={rembgEnabled} onChange={(e) => setRembgEnabled(e.target.checked)} />
@@ -93,7 +90,7 @@ export default function HomePage() {
             </label>
           </div>
           {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
-          <button type="submit" disabled={loading || !ollama?.ok}>
+          <button type="submit" disabled={loading || !ai?.ok}>
             {loading ? "Starting…" : "Start job"}
           </button>
         </form>
