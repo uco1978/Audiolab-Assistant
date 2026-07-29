@@ -5,6 +5,7 @@ import {
   downloadTrainingPackage,
   exportTrainingPackage,
   fetchCorpus,
+  generateStyleGuide,
   scanCorpus,
 } from "../api";
 
@@ -14,6 +15,8 @@ export default function TrainingPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [styleGuide, setStyleGuide] = useState("");
+  const [styleGuideMeta, setStyleGuideMeta] = useState("");
 
   useEffect(() => {
     fetchCorpus().then((summary) => {
@@ -78,6 +81,22 @@ export default function TrainingPage() {
     }
   };
 
+  const handleGenerateStyleGuide = async () => {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await generateStyleGuide();
+      setStyleGuide(result.content);
+      setStyleGuideMeta(`Generated with ${result.model_used} from ${result.samples_used} samples`);
+      setMessage("Style guide generated and saved as style-guide.txt");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Style guide generation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="card">
@@ -115,11 +134,27 @@ export default function TrainingPage() {
           >
             Export Kaggle/Colab package
           </button>
+          <button
+            className="secondary"
+            type="button"
+            disabled={busy || !corpus?.usable_files}
+            onClick={handleGenerateStyleGuide}
+          >
+            Generate style guide from corpus
+          </button>
         </div>
 
         {message && <p className="muted">{message}</p>}
         {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
       </div>
+
+      {styleGuide && (
+        <div className="card">
+          <h3>Generated Style Guide</h3>
+          {styleGuideMeta && <p className="muted">{styleGuideMeta}</p>}
+          <pre className="preview-block">{styleGuide}</pre>
+        </div>
+      )}
 
       {corpus && (
         <div className="card">

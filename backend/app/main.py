@@ -52,6 +52,7 @@ from app.services.training_corpus import (
     load_corpus_summary,
     scan_corpus,
 )
+from app.services.style_guide_builder import generate_style_guide_from_corpus
 from app.storage import get_storage
 
 settings = get_settings()
@@ -304,6 +305,21 @@ async def download_training_package():
         media_type="application/zip",
         filename=path.name,
     )
+
+
+@app.post("/api/training/style-guide")
+async def generate_style_guide_endpoint(body: dict | None = None):
+    max_files = 20
+    if body and isinstance(body.get("max_files"), int):
+        max_files = max(5, min(50, body["max_files"]))
+    try:
+        return await generate_style_guide_from_corpus(max_files=max_files)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
 
 
 @app.put("/api/settings")

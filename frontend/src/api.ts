@@ -127,6 +127,14 @@ export interface DatasetBuildResult {
   base_model_recommendation: string;
 }
 
+export interface StyleGuideResult {
+  ok: boolean;
+  style_guide_path: string;
+  model_used: string;
+  samples_used: number;
+  content: string;
+}
+
 export interface QueueStats {
   pending: number;
   running: number;
@@ -236,6 +244,9 @@ export async function testProviderConnection(data: {
 
 export async function fetchManifest(jobId: string): Promise<{
   images: Array<{ file: string; alt: string; needs_review?: boolean }>;
+  primary_model?: string;
+  compare_mode?: boolean;
+  variants?: string[];
 }> {
   return (await apiFetch(`/jobs/${jobId}/manifest`)).json();
 }
@@ -277,6 +288,16 @@ export async function buildDataset(): Promise<DatasetBuildResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ validation_ratio: 0.1, seed: 42 }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function generateStyleGuide(maxFiles = 20): Promise<StyleGuideResult> {
+  const res = await apiFetch(`/training/style-guide`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_files: maxFiles }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
