@@ -3,7 +3,7 @@ import json
 import logging
 
 from app.config import get_settings
-from app.db import claim_next_queue_job, complete_queue_job, fail_queue_job, update_job
+from app.db import claim_next_queue_job, complete_queue_job, fail_queue_job, get_job, update_job
 from app.jobs.runner import run_job
 from app.models import JobStatus
 
@@ -32,12 +32,22 @@ async def worker_loop() -> None:
                 raise RuntimeError("Queue payload missing URL")
             log.info("Processing job=%s queue=%s attempt=%s", job_id, queue_id, attempts)
             await run_job(job_id, url, config)
-            await complete_queue_job(queue_id)
-            log.info("Completed job=%s queue=%s", job_id, queue_id)
+            job = await get_job(job_id)
+            if job and job.status == JobStatus.CANCELLED:
+                await fail_queue_job(queue_id, attempts=max_attempts, max_attempts=max_attempts)
+                log.info("Cancelled job=%s queue=%s", job_id, queue_id)
+            else:
+                await complete_queue_job(queue_id)
+                log.info("Completed job=%s queue=%s", job_id, queue_id)
         except Exception as exc:
-            await update_job(job_id, status=JobStatus.FAILED.value, error=str(exc))
-            await fail_queue_job(queue_id, attempts=attempts, max_attempts=max_attempts)
-            log.exception("Failed job=%s queue=%s attempt=%s", job_id, queue_id, attempts)
+            job = await get_job(job_id)
+            if job and job.status == JobStatus.CANCELLED:
+                await fail_queue_job(queue_id, attempts=max_attempts, max_attempts=max_attempts)
+                log.info("Cancelled job=%s queue=%s (during error)", job_id, queue_id)
+            else:
+                await update_job(job_id, status=JobStatus.FAILED.value, error=str(exc))
+                await fail_queue_job(queue_id, attempts=attempts, max_attempts=max_attempts)
+                log.exception("Failed job=%s queue=%s attempt=%s", job_id, queue_id, attempts)
 
 
 def main() -> None:

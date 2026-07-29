@@ -16,6 +16,7 @@ from app.ai.providers import test_provider_connection
 from app.auth import authenticate, create_access_token, decode_access_token
 from app.config import PROJECT_ROOT, get_settings
 from app.db import (
+    cancel_job,
     create_job,
     enqueue_job,
     get_ai_usage_summary,
@@ -409,6 +410,19 @@ async def get_job_endpoint(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
     return job
+
+
+@app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job_endpoint(job_id: str):
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status.value in ("completed", "cancelled"):
+        raise HTTPException(400, f"Cannot cancel a {job.status.value} job")
+    cancelled = await cancel_job(job_id)
+    if not cancelled:
+        raise HTTPException(404, "Job not found")
+    return cancelled
 
 
 @app.post("/api/jobs/{job_id}/rate")

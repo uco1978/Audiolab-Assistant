@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  cancelJob,
   fetchJob,
   fetchManifest,
   fetchVariantCopy,
@@ -33,6 +34,7 @@ export default function JobDetailPage() {
   const [variantRatings, setVariantRatings] = useState<Record<string, number>>({});
   const [variantBusy, setVariantBusy] = useState<Record<string, boolean>>({});
   const [promotedVariant, setPromotedVariant] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const fetchWithAuth = (url: string) => {
     const token = localStorage.getItem("ppc_access_token");
@@ -117,6 +119,20 @@ export default function JobDetailPage() {
     } catch { /* silent */ }
   };
 
+  const handleCancel = async () => {
+    if (!id || cancelBusy) return;
+    if (!window.confirm("Cancel this job?")) return;
+    setCancelBusy(true);
+    try {
+      const updated = await cancelJob(id);
+      setJob(updated);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancelBusy(false);
+    }
+  };
+
   const handleSync = async () => {
     if (!id) return;
     setSyncMsg("");
@@ -141,6 +157,13 @@ export default function JobDetailPage() {
         <h2>{job.product_slug || "Job"}</h2>
         <p className="muted">{job.url}</p>
         <span className={`status-badge ${job.status}`}>{job.status}</span>
+        {(job.status === "pending" || job.status === "running") && (
+          <div className="actions" style={{ marginTop: "0.75rem" }}>
+            <button type="button" onClick={handleCancel} disabled={cancelBusy}>
+              {cancelBusy ? "Cancelling…" : "Cancel job"}
+            </button>
+          </div>
+        )}
         {job.models_used.length > 0 && (
           <p className="muted">
             {job.models_used.length === 1 ? "Model" : "Models"}: {job.models_used.join(", ")}

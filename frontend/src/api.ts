@@ -10,7 +10,7 @@ export interface JobProgress {
 export interface Job {
   id: string;
   url: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   product_slug: string | null;
   output_path: string | null;
   progress: JobProgress[];
@@ -153,6 +153,12 @@ export async function fetchJobs(): Promise<Job[]> {
 
 export async function fetchJob(id: string): Promise<Job> {
   return (await apiFetch(`/jobs/${id}`)).json();
+}
+
+export async function cancelJob(id: string): Promise<Job> {
+  const res = await apiFetch(`/jobs/${id}/cancel`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function createJob(body: {

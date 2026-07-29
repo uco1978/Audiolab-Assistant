@@ -203,6 +203,12 @@ async def create_job(url: str, config: dict) -> str:
 async def update_job(job_id: str, **fields) -> None:
     if not fields:
         return
+    new_status = fields.get("status")
+    if new_status and new_status != JobStatus.CANCELLED.value:
+        current = await get_job(job_id)
+        if current and current.status == JobStatus.CANCELLED:
+            # User cancelled — don't let the worker resurrect the job.
+            return
     fields["updated_at"] = _now()
     for key in ("progress", "models_used", "variants", "config", "timing", "fallback_models", "variant_ratings"):
         if key in fields and not isinstance(fields[key], str):
@@ -271,6 +277,48 @@ async def list_jobs(limit: int = 50) -> list[JobResponse]:
         ) as cursor:
             rows = await cursor.fetchall()
     return [_row_to_job(r) for r in rows]
+
+
+async def cancel_job(job_id: str) -> JobResponse | None:
+    """Mark a pending/running job as cancelled and release its queue entries."""
+    job = await get_job(job_id)
+    if not job:
+        return None
+    if job.status in (JobStatus.COMPLETED, JobStatus.CANCELLED):
+        return job
+
+    await update_job(
+        job_id,
+        status=JobStatus.CANCELLED.value,
+        error="Cancelled by user",
+    )
+    now = _now()
+    if _is_postgres():
+        conn = await asyncpg.connect(get_settings().database_url)  # type: ignore[arg-type]
+        try:
+            await conn.execute(
+                """
+                UPDATE job_queue
+                SET status = 'failed', updated_at = $1
+                WHERE job_id = $2 AND status IN ('pending', 'running')
+                """,
+                now,
+                job_id,
+            )
+        finally:
+            await conn.close()
+    else:
+        async with aiosqlite.connect(get_settings().database_path) as db:
+            await db.execute(
+                """
+                UPDATE job_queue
+                SET status = 'failed', updated_at = ?
+                WHERE job_id = ? AND status IN ('pending', 'running')
+                """,
+                (now, job_id),
+            )
+            await db.commit()
+    return await get_job(job_id)
 
 
 def _row_to_job(row: aiosqlite.Row | dict) -> JobResponse:

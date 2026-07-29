@@ -154,6 +154,7 @@ button:disabled {
 .status-badge.running { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 .status-badge.failed { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
 .status-badge.pending { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+.status-badge.cancelled { background: color-mix(in srgb, var(--muted) 25%, transparent); color: var(--muted); }
 
 .job-list-item {
   display: flex;
