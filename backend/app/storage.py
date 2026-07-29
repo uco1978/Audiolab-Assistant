@@ -176,12 +176,20 @@ class S3Storage(StorageBackend):
 
         access_key = (settings.storage_access_key_id or "").strip()
         secret_key = (settings.storage_secret_access_key or "").strip()
-        endpoint = (settings.storage_endpoint_url or "").strip() or None
+        endpoint = (settings.storage_endpoint_url or "").strip().rstrip("/") or None
         region = (settings.storage_region or "auto").strip() or "auto"
         if not access_key or not secret_key:
             raise RuntimeError("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY are required")
 
+        # Avoid endpoint paths like .../bucket-name which break signing.
+        if endpoint and settings.storage_bucket.strip():
+            bucket = settings.storage_bucket.strip()
+            if endpoint.endswith(f"/{bucket}"):
+                endpoint = endpoint[: -len(bucket) - 1].rstrip("/")
+
         self.bucket = settings.storage_bucket.strip()
+        # Cloudflare R2 is incompatible with boto3's default checksum behavior (1.36+),
+        # which produces SignatureDoesNotMatch on ListObjects/PutObject.
         self.client = boto3.client(
             "s3",
             region_name=region,
@@ -191,6 +199,8 @@ class S3Storage(StorageBackend):
             config=Config(
                 signature_version="s3v4",
                 s3={"addressing_style": "path"},
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
             ),
         )
 
