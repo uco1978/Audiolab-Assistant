@@ -17,6 +17,8 @@ export interface Job {
   error: string | null;
   models_used: string[];
   user_rating: number | null;
+  variants: string[];
+  variant_ratings: Record<string, number>;
   timing: Record<string, number>;
   fallback_models: string[];
   created_at: string;
@@ -167,6 +169,37 @@ export async function rateJob(jobId: string, rating: number): Promise<Job> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rating }),
   });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function rateVariant(jobId: string, variant: string, rating: number): Promise<Job> {
+  const res = await apiFetch(`/jobs/${jobId}/rate-variant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ variant, rating }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function promoteVariant(jobId: string, variant: string): Promise<{ ok: boolean; promoted: string }> {
+  const res = await apiFetch(`/jobs/${jobId}/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ variant }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export interface VariantCopy {
+  html: string;
+  short_description: string;
+}
+
+export async function fetchVariantCopy(jobId: string, variantId: string): Promise<VariantCopy> {
+  const res = await apiFetch(`/jobs/${jobId}/variant/${variantId}/copy`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     variants TEXT NOT NULL DEFAULT '[]',
     config TEXT NOT NULL DEFAULT '{}',
     user_rating INTEGER,
+    variant_ratings TEXT NOT NULL DEFAULT '{}',
     timing TEXT NOT NULL DEFAULT '{}',
     fallback_models TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
@@ -69,6 +70,7 @@ POSTGRES_STATEMENTS = [
         variants TEXT NOT NULL DEFAULT '[]',
         config TEXT NOT NULL DEFAULT '{}',
         user_rating INTEGER,
+        variant_ratings TEXT NOT NULL DEFAULT '{}',
         timing TEXT NOT NULL DEFAULT '{}',
         fallback_models TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
@@ -104,6 +106,7 @@ POSTGRES_STATEMENTS = [
     """,
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS storage_prefix TEXT",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_rating INTEGER",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS variant_ratings TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS timing TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS fallback_models TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS outcome TEXT NOT NULL DEFAULT 'success'",
@@ -142,6 +145,8 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE jobs ADD COLUMN storage_prefix TEXT")
         if "user_rating" not in cols:
             await db.execute("ALTER TABLE jobs ADD COLUMN user_rating INTEGER")
+        if "variant_ratings" not in cols:
+            await db.execute("ALTER TABLE jobs ADD COLUMN variant_ratings TEXT NOT NULL DEFAULT '{}'")
         if "timing" not in cols:
             await db.execute("ALTER TABLE jobs ADD COLUMN timing TEXT NOT NULL DEFAULT '{}'")
         if "fallback_models" not in cols:
@@ -199,7 +204,7 @@ async def update_job(job_id: str, **fields) -> None:
     if not fields:
         return
     fields["updated_at"] = _now()
-    for key in ("progress", "models_used", "variants", "config", "timing", "fallback_models"):
+    for key in ("progress", "models_used", "variants", "config", "timing", "fallback_models", "variant_ratings"):
         if key in fields and not isinstance(fields[key], str):
             fields[key] = json.dumps(fields[key])
     if _is_postgres():
@@ -283,6 +288,7 @@ def _row_to_job(row: aiosqlite.Row | dict) -> JobResponse:
         error=row["error"],
         models_used=json.loads(row["models_used"] or "[]"),
         variants=json.loads(row["variants"] or "[]"),
+        variant_ratings=json.loads(row.get("variant_ratings", "{}") if isinstance(row, dict) else (row["variant_ratings"] if "variant_ratings" in row.keys() else "{}")),
         timing=json.loads(row.get("timing", "{}") if isinstance(row, dict) else (row["timing"] if "timing" in row.keys() else "{}")),
         fallback_models=json.loads(row.get("fallback_models", "[]") if isinstance(row, dict) else (row["fallback_models"] if "fallback_models" in row.keys() else "[]")),
         created_at=datetime.fromisoformat(row["created_at"]),
@@ -617,8 +623,9 @@ async def get_recent_errors(limit: int = 20) -> list[dict]:
 
 async def get_model_ratings_summary() -> list[dict]:
     sql = """
-        SELECT models_used, user_rating FROM jobs
-        WHERE status = 'completed' AND user_rating IS NOT NULL
+        SELECT models_used, user_rating, variant_ratings FROM jobs
+        WHERE status = 'completed'
+          AND (user_rating IS NOT NULL OR variant_ratings != '{}')
     """
     if _is_postgres():
         conn = await asyncpg.connect(get_settings().database_url)  # type: ignore[arg-type]
@@ -634,10 +641,15 @@ async def get_model_ratings_summary() -> list[dict]:
 
     agg: dict[str, list[int]] = {}
     for r in rows:
-        models = json.loads(r["models_used"] or "[]")
-        rating = r["user_rating"]
-        for m in models:
-            agg.setdefault(m, []).append(rating)
+        vr = json.loads(r.get("variant_ratings") or "{}")
+        if vr:
+            for variant_id, rating in vr.items():
+                model = variant_id.replace("-", "/", 1)
+                agg.setdefault(model, []).append(rating)
+        elif r.get("user_rating"):
+            models = json.loads(r["models_used"] or "[]")
+            for m in models:
+                agg.setdefault(m, []).append(r["user_rating"])
 
     return [
         {

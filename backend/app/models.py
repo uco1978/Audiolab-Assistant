@@ -50,6 +50,7 @@ class JobResponse(BaseModel):
     models_used: list[str] = Field(default_factory=list)
     variants: list[str] = Field(default_factory=list)
     user_rating: int | None = None
+    variant_ratings: dict[str, int] = Field(default_factory=dict)
     timing: dict[str, int] = Field(default_factory=dict)
     fallback_models: list[str] = Field(default_factory=list)
     created_at: datetime

@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.ai.providers import completion_with_fallback
+from app.ai.providers import completion, completion_with_fallback
 from app.config import get_settings
 from app.scrapers.generic import ScrapedProduct
 from app.services.brand_tone import load_brand_context
@@ -91,10 +91,8 @@ def _wrap_ltr_codes(html: str) -> str:
     return re.sub(pattern, replacer, html)
 
 
-async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
-    settings = get_settings()
+def _build_messages(product: ScrapedProduct) -> tuple[list[dict[str, str]], list[str]]:
     brand_context, brand_notes = load_brand_context()
-
     user_prompt = USER_PROMPT_TEMPLATE.format(
         brand_context=brand_context or "(No brand examples yet — use professional retail Hebrew.)",
         title=product.title,
@@ -107,13 +105,14 @@ async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
+    return messages, brand_notes
 
-    raw_text, used_model, _tried = await completion_with_fallback(settings.default_model_ids, messages)
+
+def _parse_copy(raw_text: str, model_id: str, product: ScrapedProduct, brand_notes: list[str], fallback_tried: list[str] | None = None) -> GeneratedCopy:
     data = _extract_json(raw_text)
     description = _wrap_ltr_codes(data.get("description_html_he", ""))
-
     return GeneratedCopy(
-        model_id=used_model,
+        model_id=model_id,
         title_he=data.get("title_he", product.title),
         description_html_he=description,
         short_description_he=data.get("short_description_he", ""),
@@ -121,5 +120,20 @@ async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
         seo=data.get("seo", {}),
         raw_json=data,
         brand_notes=brand_notes,
-        fallback_models_tried=_tried,
+        fallback_models_tried=fallback_tried or [],
     )
+
+
+async def generate_copy_with_model(product: ScrapedProduct, model_id: str) -> GeneratedCopy:
+    """Generate copy using a specific model. Raises on failure (no fallback)."""
+    messages, brand_notes = _build_messages(product)
+    raw_text = await completion(model_id, messages)
+    return _parse_copy(raw_text, model_id, product, brand_notes)
+
+
+async def generate_copy(product: ScrapedProduct) -> GeneratedCopy:
+    """Generate copy using the fallback chain."""
+    settings = get_settings()
+    messages, brand_notes = _build_messages(product)
+    raw_text, used_model, _tried = await completion_with_fallback(settings.default_model_ids, messages)
+    return _parse_copy(raw_text, used_model, product, brand_notes, _tried)

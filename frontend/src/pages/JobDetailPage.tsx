@@ -3,11 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import {
   fetchJob,
   fetchManifest,
+  fetchVariantCopy,
   Job,
   jobFileUrl,
   openFolder,
+  promoteVariant,
   rateJob,
+  rateVariant,
   syncWooCommerce,
+  VariantCopy,
 } from "../api";
 import CopyPreview from "../components/CopyPreview";
 import ImagePreview from "../components/ImagePreview";
@@ -25,6 +29,11 @@ export default function JobDetailPage() {
   const [syncMsg, setSyncMsg] = useState("");
   const [rating, setRating] = useState<number | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
+  const [variantCopies, setVariantCopies] = useState<Record<string, VariantCopy>>({});
+  const [variantRatings, setVariantRatings] = useState<Record<string, number>>({});
+  const [variantBusy, setVariantBusy] = useState<Record<string, boolean>>({});
+  const [promotedVariant, setPromotedVariant] = useState<string | null>(null);
+  const [manifest, setManifest] = useState<{ primary_model?: string; compare_mode?: boolean } | null>(null);
 
   const fetchWithAuth = (url: string) => {
     const token = localStorage.getItem("ppc_access_token");
@@ -33,31 +42,45 @@ export default function JobDetailPage() {
     });
   };
 
+  const hasVariants = (job?.variants?.length ?? 0) > 1;
+
   const load = useCallback(async () => {
     if (!id) return;
     const j = await fetchJob(id);
     setJob(j);
     if (j.user_rating != null) setRating(j.user_rating);
+    if (j.variant_ratings) setVariantRatings(j.variant_ratings);
 
     if (j.status === "completed") {
       try {
-        const res = await fetchWithAuth(jobFileUrl(id, "copy/product-description.html"));
-        const text = await res.text();
-        const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        setHtml(bodyMatch ? bodyMatch[1] : text);
-        const shortRes = await fetchWithAuth(jobFileUrl(id, "copy/short-description.txt"));
-        setShortDesc(await shortRes.text());
-        const manifest = await fetchManifest(id);
-        setImages(manifest.images || []);
-      } catch {
-        /* preview not ready */
-      }
+        const m = await fetchManifest(id);
+        setManifest(m);
+        setImages(m.images || []);
+        if (m.primary_model) setPromotedVariant(m.primary_model);
+
+        if (j.variants && j.variants.length > 1) {
+          const copies: Record<string, VariantCopy> = {};
+          for (const v of j.variants) {
+            try {
+              copies[v] = await fetchVariantCopy(id, v);
+            } catch { /* variant might not exist yet */ }
+          }
+          setVariantCopies(copies);
+        } else {
+          const res = await fetchWithAuth(jobFileUrl(id, "copy/product-description.html"));
+          const text = await res.text();
+          const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+          setHtml(bodyMatch ? bodyMatch[1] : text);
+          const shortRes = await fetchWithAuth(jobFileUrl(id, "copy/short-description.txt"));
+          setShortDesc(await shortRes.text());
+        }
+      } catch { /* preview not ready */ }
     }
   }, [id]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 2000);
+    const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -72,11 +95,28 @@ export default function JobDetailPage() {
     try {
       const updated = await rateJob(id, stars);
       setRating(updated.user_rating);
-    } catch {
-      /* silent */
-    } finally {
+    } catch { /* silent */ } finally {
       setRatingBusy(false);
     }
+  };
+
+  const handleVariantRate = async (variant: string, stars: number) => {
+    if (!id || variantBusy[variant]) return;
+    setVariantBusy((p) => ({ ...p, [variant]: true }));
+    try {
+      const updated = await rateVariant(id, variant, stars);
+      setVariantRatings(updated.variant_ratings);
+    } catch { /* silent */ } finally {
+      setVariantBusy((p) => ({ ...p, [variant]: false }));
+    }
+  };
+
+  const handlePromote = async (variant: string) => {
+    if (!id) return;
+    try {
+      await promoteVariant(id, variant);
+      setPromotedVariant(variant);
+    } catch { /* silent */ }
   };
 
   const handleSync = async () => {
@@ -94,6 +134,8 @@ export default function JobDetailPage() {
     }
   };
 
+  const variantLabel = (v: string) => v.replace(/-/g, "/");
+
   return (
     <>
       <div className="card">
@@ -101,8 +143,10 @@ export default function JobDetailPage() {
         <h2>{job.product_slug || "Job"}</h2>
         <p className="muted">{job.url}</p>
         <span className={`status-badge ${job.status}`}>{job.status}</span>
-        {job.models_used[0] && (
-          <p className="muted">Model: {job.models_used[0]}</p>
+        {job.models_used.length > 0 && (
+          <p className="muted">
+            {job.models_used.length === 1 ? "Model" : "Models"}: {job.models_used.join(", ")}
+          </p>
         )}
         {(job.status === "running" || job.status === "pending") && (
           <>
@@ -118,7 +162,8 @@ export default function JobDetailPage() {
             <button type="button" onClick={() => id && openFolder(id)}>Open folder</button>
           </div>
         )}
-        {job.status === "completed" && (
+        {/* Single-copy rating (legacy jobs without variants) */}
+        {job.status === "completed" && !hasVariants && (
           <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span className="muted">Rate output:</span>
             <StarRating value={rating} onChange={handleRate} disabled={ratingBusy} />
@@ -127,7 +172,76 @@ export default function JobDetailPage() {
         )}
       </div>
 
-      {job.status === "completed" && html && (
+      {/* Side-by-side variant comparison */}
+      {job.status === "completed" && hasVariants && (
+        <div className="card">
+          <h3>Compare copy variants</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            {job.variants.map((v) => {
+              const copy = variantCopies[v];
+              const isPromoted = promotedVariant === v;
+              return (
+                <div
+                  key={v}
+                  style={{
+                    border: `2px solid ${isPromoted ? "var(--success)" : "var(--border)"}`,
+                    borderRadius: "10px",
+                    padding: "1rem",
+                    background: "var(--bg)",
+                    position: "relative",
+                  }}
+                >
+                  {isPromoted && (
+                    <span style={{
+                      position: "absolute", top: "0.5rem", right: "0.5rem",
+                      background: "var(--success)", color: "#fff",
+                      padding: "0.15rem 0.5rem", borderRadius: "4px", fontSize: "0.75rem",
+                    }}>
+                      Primary
+                    </span>
+                  )}
+                  <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", color: "var(--accent)" }}>
+                    {variantLabel(v)}
+                  </h4>
+                  {copy ? (
+                    <>
+                      <div style={{ maxHeight: "300px", overflowY: "auto", marginBottom: "0.75rem" }}>
+                        <CopyPreview html={copy.html} />
+                      </div>
+                      <p className="muted" dir="rtl" style={{ fontSize: "0.85rem" }}>
+                        {copy.short_description}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="muted">Loading variant…</p>
+                  )}
+                  <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <StarRating
+                      value={variantRatings[v] ?? null}
+                      onChange={(stars) => handleVariantRate(v, stars)}
+                      disabled={!!variantBusy[v]}
+                    />
+                    {variantRatings[v] && <span className="muted">{variantRatings[v]}/5</span>}
+                  </div>
+                  {!isPromoted && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}
+                      onClick={() => handlePromote(v)}
+                    >
+                      Use this version
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Single copy preview (legacy / single-model jobs) */}
+      {job.status === "completed" && !hasVariants && html && (
         <div className="card">
           <h3>Hebrew copy preview</h3>
           <CopyPreview html={html} />

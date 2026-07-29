@@ -1,8 +1,10 @@
+import asyncio
+import logging
 import tempfile
 import time
 from pathlib import Path
 
-from app.ai.copy_generator import generate_copy
+from app.ai.copy_generator import generate_copy, generate_copy_with_model
 from app.config import get_settings
 from app.db import append_progress, update_job
 from app.models import JobProgressEvent, JobStatus, JobStep
@@ -16,6 +18,35 @@ from app.services.image_selector import select_product_images
 from app.services.pdf_extractor import extract_pdf_text
 from app.services.web_search import domain_from_url, enrich_product_specs
 from app.storage import get_storage
+
+
+def _pick_two_models(settings) -> list[str]:
+    """Pick up to 2 configured models from different providers."""
+    seen_providers: set[str] = set()
+    picked: list[str] = []
+    for model_id in settings.default_model_ids:
+        if not settings.model_is_configured(model_id):
+            continue
+        provider = model_id.split("/")[0] if "/" in model_id else model_id
+        if provider in seen_providers:
+            continue
+        seen_providers.add(provider)
+        picked.append(model_id)
+        if len(picked) == 2:
+            break
+    if len(picked) < 2:
+        for m in settings.available_models:
+            mid = m["id"]
+            if mid in picked or not settings.model_is_configured(mid):
+                continue
+            provider = m["provider"]
+            if provider in seen_providers:
+                continue
+            seen_providers.add(provider)
+            picked.append(mid)
+            if len(picked) == 2:
+                break
+    return picked
 
 
 async def run_job(job_id: str, url: str, config: dict) -> None:
@@ -98,14 +129,34 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         timing["images_ms"] = int((time.perf_counter() - t0) * 1000)
 
         t0 = time.perf_counter()
-        await _progress(
-            job_id,
-            JobStep.GENERATE_COPY,
-            "Generating Hebrew copy (cloud provider chain)",
-            72,
-        )
-        copy = await generate_copy(product)
-        product.source_notes.extend(copy.brand_notes)
+
+        # Pick 2 models from different providers for comparison
+        model_candidates = _pick_two_models(settings)
+        copies = []
+        all_fallback: list[str] = []
+
+        if len(model_candidates) >= 2:
+            await _progress(job_id, JobStep.GENERATE_COPY,
+                f"Generating Hebrew copy with {len(model_candidates)} models in parallel", 65)
+            tasks = [generate_copy_with_model(product, m) for m in model_candidates]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    logging.getLogger("ppc.runner").warning("Variant generation failed: %s", r)
+                else:
+                    copies.append(r)
+
+        if not copies:
+            await _progress(job_id, JobStep.GENERATE_COPY,
+                "Generating Hebrew copy (fallback chain)", 72)
+            fallback_copy = await generate_copy(product)
+            copies = [fallback_copy]
+            all_fallback = fallback_copy.fallback_models_tried
+
+        for c in copies:
+            product.source_notes.extend(c.brand_notes)
+
+        compare_mode = len(copies) > 1
         timing["ai_copy_ms"] = int((time.perf_counter() - t0) * 1000)
 
         t0 = time.perf_counter()
@@ -115,8 +166,8 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
             slug=slug,
             product=product,
             processed_images=processed,
-            copies=[copy],
-            compare_mode=False,
+            copies=copies,
+            compare_mode=compare_mode,
         )
 
         storage_prefix: str | None = None
@@ -126,16 +177,19 @@ async def run_job(job_id: str, url: str, config: dict) -> None:
         timing["export_ms"] = int((time.perf_counter() - t0) * 1000)
         timing["total_ms"] = int((time.perf_counter() - job_t0) * 1000)
 
+        from app.services.exporter import _variant_id
+        variant_ids = [_variant_id(c.model_id) for c in copies] if compare_mode else []
+
         await update_job(
             job_id,
             status=JobStatus.COMPLETED.value,
             product_slug=slug,
             output_path=str(product_dir),
             storage_prefix=storage_prefix,
-            models_used=[copy.model_id],
-            variants=[],
+            models_used=[c.model_id for c in copies],
+            variants=variant_ids,
             timing=timing,
-            fallback_models=copy.fallback_models_tried,
+            fallback_models=all_fallback,
         )
         await _progress(job_id, JobStep.DONE, "Complete", 100, {"output_path": str(product_dir)})
 

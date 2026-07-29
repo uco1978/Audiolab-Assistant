@@ -384,6 +384,70 @@ async def rate_job(job_id: str, body: dict):
     return updated
 
 
+@app.post("/api/jobs/{job_id}/rate-variant")
+async def rate_variant(job_id: str, body: dict):
+    variant = body.get("variant")
+    rating = body.get("rating")
+    if not variant or not isinstance(variant, str):
+        raise HTTPException(400, "variant is required")
+    if not isinstance(rating, int) or not 1 <= rating <= 5:
+        raise HTTPException(400, "rating must be an integer between 1 and 5")
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    ratings = dict(job.variant_ratings)
+    ratings[variant] = rating
+    await update_job(job_id, variant_ratings=ratings)
+    return await get_job(job_id)
+
+
+@app.post("/api/jobs/{job_id}/promote")
+async def promote_variant_endpoint(job_id: str, body: dict):
+    from app.services.exporter import promote_variant as do_promote
+
+    variant = body.get("variant")
+    if not variant or not isinstance(variant, str):
+        raise HTTPException(400, "variant is required")
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if not job.output_path:
+        raise HTTPException(400, "No output path for this job")
+    try:
+        do_promote(Path(job.output_path), variant)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "promoted": variant}
+
+
+@app.get("/api/jobs/{job_id}/variant/{variant_id}/copy")
+async def get_variant_copy(job_id: str, variant_id: str):
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    base = f"copy/variants/{variant_id}"
+
+    def _read_file(rel: str) -> str | None:
+        if job.storage_prefix:
+            try:
+                return get_storage().read_bytes(f"{job.storage_prefix}/{rel}").decode("utf-8")
+            except Exception:
+                return None
+        if job.output_path:
+            p = Path(job.output_path) / rel
+            return p.read_text(encoding="utf-8") if p.exists() else None
+        return None
+
+    html_raw = _read_file(f"{base}/product-description.html")
+    short = _read_file(f"{base}/short-description.txt")
+    if html_raw is None:
+        raise HTTPException(404, "Variant copy not found")
+    import re
+    body_match = re.search(r"<body[^>]*>([\s\S]*)</body>", html_raw, re.IGNORECASE)
+    html_body = body_match.group(1) if body_match else html_raw
+    return {"html": html_body, "short_description": short or ""}
+
+
 @app.post("/api/jobs/{job_id}/open-folder")
 async def open_folder(job_id: str):
     if settings.app_env != "development":
