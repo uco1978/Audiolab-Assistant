@@ -56,6 +56,11 @@ from app.services.training_corpus import (
     scan_corpus,
 )
 from app.services.style_guide_builder import generate_style_guide_from_corpus
+from app.secrets_store import (
+    PROVIDER_FIELD_TO_ENV,
+    apply_provider_secrets_to_runtime,
+    save_provider_keys_from_update,
+)
 from app.storage import get_storage
 
 settings = get_settings()
@@ -65,6 +70,7 @@ log = logging.getLogger("ppc.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await apply_provider_secrets_to_runtime()
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     settings.brand_examples_dir.mkdir(parents=True, exist_ok=True)
     settings.storage_local_dir.mkdir(parents=True, exist_ok=True)
@@ -185,6 +191,7 @@ async def auth_me(request: Request):
 
 @app.get("/api/ai/status")
 async def ai_status():
+    await apply_provider_secrets_to_runtime()
     s = get_settings()
     providers = {name: bool(getattr(s, key_field, "")) for name, key_field in s.provider_key_fields.items()}
     configured_models = [m["id"] for m in s.available_models if s.model_is_configured(m["id"])]
@@ -200,6 +207,8 @@ async def ai_status():
 @app.post("/api/ai/test")
 async def ai_test_provider(body: AiProviderTestRequest):
     try:
+        if not body.api_key:
+            await apply_provider_secrets_to_runtime()
         result = await test_provider_connection(
             provider=body.provider,
             api_key=body.api_key,
@@ -219,12 +228,14 @@ async def ai_test_provider(body: AiProviderTestRequest):
 
 @app.get("/api/models")
 async def list_models():
+    await apply_provider_secrets_to_runtime()
     s = get_settings()
     return [{**m, "configured": s.model_is_configured(m["id"])} for m in s.available_models]
 
 
 @app.get("/api/settings")
 async def get_settings_endpoint():
+    await apply_provider_secrets_to_runtime()
     s = get_settings()
     providers = {name: bool(getattr(s, key_field, "")) for name, key_field in s.provider_key_fields.items()}
     examples = []
@@ -249,6 +260,7 @@ async def get_settings_endpoint():
         "storage_backend": s.storage_backend,
         "providers": providers,
         "provider_order": list(s.provider_key_fields.keys()),
+        "secrets_backend": "database",
     }
 
 
@@ -333,6 +345,7 @@ async def generate_style_guide_endpoint(body: dict | None = None):
     if body and isinstance(body.get("max_files"), int):
         max_files = max(5, min(50, body["max_files"]))
     try:
+        await apply_provider_secrets_to_runtime()
         return await generate_style_guide_from_corpus(max_files=max_files)
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -346,6 +359,13 @@ async def generate_style_guide_endpoint(body: dict | None = None):
 async def update_settings(body: SettingsUpdate):
     import os
 
+    data = body.model_dump(exclude_none=True)
+
+    # Provider API keys: encrypted in Postgres/SQLite (never written to .env).
+    key_payload = {k: data[k] for k in PROVIDER_FIELD_TO_ENV if k in data}
+    if key_payload:
+        await save_provider_keys_from_update(key_payload)
+
     env_path = PROJECT_ROOT / ".env"
     lines: dict[str, str] = {}
     if env_path.exists():
@@ -354,16 +374,8 @@ async def update_settings(body: SettingsUpdate):
                 k, _, v = line.partition("=")
                 lines[k.strip()] = v.strip()
 
+    # Non-secret settings may still use .env for local/dev convenience.
     mapping = {
-        "gemini_api_key": "GEMINI_API_KEY",
-        "groq_api_key": "GROQ_API_KEY",
-        "openrouter_api_key": "OPENROUTER_API_KEY",
-        "openai_api_key": "OPENAI_API_KEY",
-        "anthropic_api_key": "ANTHROPIC_API_KEY",
-        "cohere_api_key": "COHERE_API_KEY",
-        "mistral_api_key": "MISTRAL_API_KEY",
-        "perplexity_api_key": "PERPLEXITY_API_KEY",
-        "xai_api_key": "XAI_API_KEY",
         "default_models": "DEFAULT_MODELS",
         "model_fallback_chain": "MODEL_FALLBACK_CHAIN",
         "output_dir": "OUTPUT_DIR",
@@ -372,18 +384,20 @@ async def update_settings(body: SettingsUpdate):
         "webp_quality": "WEBP_QUALITY",
         "brand_examples_dir": "BRAND_EXAMPLES_DIR",
     }
-    data = body.model_dump(exclude_none=True)
     for field, env_key in mapping.items():
         if field in data:
             val = data[field]
             rendered = str(val).lower() if isinstance(val, bool) else str(val)
             lines[env_key] = rendered
-            # Apply immediately so this process sees keys without restart.
-            # On Render, also set the same vars in the Dashboard so they survive redeploys.
             os.environ[env_key] = rendered
+
+    # Strip any legacy API keys from .env so secrets aren't left in plaintext files.
+    for env_key in PROVIDER_FIELD_TO_ENV.values():
+        lines.pop(env_key, None)
 
     env_path.write_text("\n".join(f"{k}={v}" for k, v in lines.items()) + "\n", encoding="utf-8")
     get_settings.cache_clear()
+    await apply_provider_secrets_to_runtime()
     return await get_settings_endpoint()
 
 

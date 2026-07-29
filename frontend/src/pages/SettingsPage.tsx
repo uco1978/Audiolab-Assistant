@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchSettings, Settings, testProviderConnection, updateSettings } from "../api";
 import {
   API_KEY_FIELD_BY_PROVIDER,
-  readStoredProviderKeys,
-  syncProviderKeysToServer,
-  writeStoredProviderKey,
+  migrateLegacyBrowserKeysOnce,
 } from "../providerKeys";
 
 export default function SettingsPage() {
@@ -16,25 +14,23 @@ export default function SettingsPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
-  const [syncNote, setSyncNote] = useState("");
+  const [note, setNote] = useState("");
 
   const loadSettings = async () => {
     setLoading(true);
     setError("");
     try {
-      const restored = readStoredProviderKeys();
-      setKeys(restored);
-
-      const sync = await syncProviderKeysToServer();
-      if (sync.synced && sync.providers.length > 0) {
-        setSyncNote(`Auto-synced keys for: ${sync.providers.join(", ")}`);
+      const migration = await migrateLegacyBrowserKeysOnce();
+      if (migration.migrated) {
+        setNote(`Migrated browser keys to encrypted server storage: ${migration.providers.join(", ")}`);
       } else {
-        setSyncNote("");
+        setNote("");
       }
-
-      const s = sync.settings ?? (await fetchSettings());
+      const s = migration.settings ?? (await fetchSettings());
       setSettings(s);
       setOutputDir(s.output_dir);
+      // Never echo secrets into the form — leave blank; placeholder shows Configured.
+      setKeys({});
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load settings";
       setError(message);
@@ -51,6 +47,7 @@ export default function SettingsPage() {
   }, []);
 
   const handleSave = async () => {
+    setError("");
     const payload: Record<string, string | boolean> = { output_dir: outputDir };
     for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
       const keyVal = (keys[provider] || "").trim();
@@ -58,10 +55,27 @@ export default function SettingsPage() {
         payload[API_KEY_FIELD_BY_PROVIDER[provider]] = keyVal;
       }
     }
-    const s = await updateSettings(payload);
-    setSettings(s);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      const s = await updateSettings(payload);
+      setSettings(s);
+      setKeys({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    }
+  };
+
+  const handleClear = async (provider: string) => {
+    if (!window.confirm(`Remove the stored ${provider} API key from the server?`)) return;
+    try {
+      const s = await updateSettings({ [API_KEY_FIELD_BY_PROVIDER[provider]]: "" });
+      setSettings(s);
+      setKeys((prev) => ({ ...prev, [provider]: "" }));
+      setTestStatus((prev) => ({ ...prev, [provider]: "Cleared on server" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Clear failed");
+    }
   };
 
   const providerLabel = (provider: string): string => {
@@ -73,16 +87,17 @@ export default function SettingsPage() {
 
   const setProviderKey = (provider: string, value: string) => {
     setKeys((prev) => ({ ...prev, [provider]: value }));
-    writeStoredProviderKey(provider, value);
   };
 
   const runProviderTest = async (provider: string) => {
     setTesting((prev) => ({ ...prev, [provider]: true }));
     setTestStatus((prev) => ({ ...prev, [provider]: "" }));
     try {
+      const typed = (keys[provider] || "").trim();
       const result = await testProviderConnection({
         provider,
-        api_key: keys[provider].trim() || undefined,
+        // Prefer typed key for testing a replacement; otherwise server uses stored key.
+        api_key: typed || undefined,
       });
       setTestStatus((prev) => ({
         ...prev,
@@ -122,24 +137,30 @@ export default function SettingsPage() {
 
       <h3>AI Providers</h3>
       <p className="muted">
-        Keys are kept in this browser and auto-synced to the server after login or refresh when the
-        server is missing them. For permanent setup (and the worker), also set the same keys as
-        Render env vars on <code>ppc-backend</code> and <code>ppc-worker</code>.
+        API keys are stored encrypted in the database and used by both the API and the worker.
+        The browser never receives the raw keys back — leave a field blank to keep the existing key.
+        Click Save after pasting new keys.
       </p>
-      {syncNote && <p className="muted">{syncNote}</p>}
+      {note && <p className="muted">{note}</p>}
       {(settings.provider_order?.length ? settings.provider_order : Object.keys(settings.providers)).map((provider) => (
         <div key={provider} style={{ marginBottom: "0.9rem" }}>
           <label>{providerLabel(provider)} API key</label>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="password"
               value={keys[provider] || ""}
               onChange={(e) => setProviderKey(provider, e.target.value)}
-              placeholder={settings.providers[provider] ? "Configured (enter to replace)" : "Paste API key"}
+              placeholder={settings.providers[provider] ? "Configured (paste to replace)" : "Paste API key"}
+              autoComplete="off"
             />
             <button type="button" onClick={() => runProviderTest(provider)} disabled={testing[provider] === true}>
               {testing[provider] ? "Testing..." : "Test"}
             </button>
+            {settings.providers[provider] && (
+              <button type="button" className="secondary" onClick={() => handleClear(provider)}>
+                Clear
+              </button>
+            )}
             <span className="muted">{settings.providers[provider] ? "Configured" : "Missing key"}</span>
           </div>
           {testStatus[provider] && <p className="muted">{testStatus[provider]}</p>}

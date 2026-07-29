@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AiStatus, createJob, fetchAiStatus } from "../api";
-import { syncProviderKeysToServer } from "../providerKeys";
+import { migrateLegacyBrowserKeysOnce } from "../providerKeys";
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ export default function HomePage() {
     let cancelled = false;
     const refresh = async () => {
       try {
-        await syncProviderKeysToServer();
+        await migrateLegacyBrowserKeysOnce();
       } catch {
         /* ignore */
       }

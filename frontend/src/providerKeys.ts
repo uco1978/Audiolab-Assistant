@@ -14,54 +14,60 @@ export const API_KEY_FIELD_BY_PROVIDER: Record<string, string> = {
   xai: "xai_api_key",
 };
 
-export function readStoredProviderKeys(): Record<string, string> {
-  const keys: Record<string, string> = {};
-  for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
-    keys[provider] = (localStorage.getItem(`${KEY_STORAGE_PREFIX}${provider}`) || "").trim();
-  }
-  return keys;
-}
-
-export function writeStoredProviderKey(provider: string, value: string): void {
-  localStorage.setItem(`${KEY_STORAGE_PREFIX}${provider}`, value);
-}
-
-/**
- * Push browser-stored API keys to the backend when the server is missing them.
- * Returns updated settings when a sync ran, otherwise the current settings (or null).
- */
-export async function syncProviderKeysToServer(): Promise<{
-  synced: boolean;
-  settings: Settings | null;
+/** One-time migration from legacy browser-stored keys into the encrypted DB store. */
+export async function migrateLegacyBrowserKeysOnce(): Promise<{
+  migrated: boolean;
   providers: string[];
+  settings: Settings | null;
 }> {
-  const stored = readStoredProviderKeys();
-  const localWithKeys = Object.entries(stored).filter(([, v]) => Boolean(v));
-  if (localWithKeys.length === 0) {
-    return { synced: false, settings: null, providers: [] };
+  const flag = "ppc_provider_keys_migrated_v1";
+  if (localStorage.getItem(flag) === "1") {
+    return { migrated: false, providers: [], settings: null };
+  }
+
+  const payload: Record<string, string> = {};
+  const providers: string[] = [];
+  for (const [provider, field] of Object.entries(API_KEY_FIELD_BY_PROVIDER)) {
+    const keyVal = (localStorage.getItem(`${KEY_STORAGE_PREFIX}${provider}`) || "").trim();
+    if (keyVal) {
+      payload[field] = keyVal;
+      providers.push(provider);
+    }
+  }
+
+  if (providers.length === 0) {
+    localStorage.setItem(flag, "1");
+    return { migrated: false, providers: [], settings: null };
   }
 
   let settings: Settings;
   try {
     settings = await fetchSettings();
   } catch {
-    return { synced: false, settings: null, providers: [] };
+    return { migrated: false, providers: [], settings: null };
   }
 
-  const payload: Record<string, string> = {};
-  const providers: string[] = [];
-  for (const [provider, keyVal] of localWithKeys) {
-    const alreadyOnServer = Boolean(settings.providers?.[provider]);
-    if (!alreadyOnServer) {
-      payload[API_KEY_FIELD_BY_PROVIDER[provider]] = keyVal;
-      providers.push(provider);
+  const missing = providers.filter((p) => !settings.providers?.[p]);
+  if (missing.length === 0) {
+    // Server already has keys — clear legacy browser copies.
+    for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
+      localStorage.removeItem(`${KEY_STORAGE_PREFIX}${provider}`);
     }
+    localStorage.setItem(flag, "1");
+    return { migrated: false, providers: [], settings };
   }
 
-  if (providers.length === 0) {
-    return { synced: false, settings, providers: [] };
+  const toSave: Record<string, string> = {};
+  for (const provider of missing) {
+    const field = API_KEY_FIELD_BY_PROVIDER[provider];
+    const keyVal = (localStorage.getItem(`${KEY_STORAGE_PREFIX}${provider}`) || "").trim();
+    if (keyVal) toSave[field] = keyVal;
   }
 
-  const updated = await updateSettings(payload);
-  return { synced: true, settings: updated, providers };
+  const updated = await updateSettings(toSave);
+  for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
+    localStorage.removeItem(`${KEY_STORAGE_PREFIX}${provider}`);
+  }
+  localStorage.setItem(flag, "1");
+  return { migrated: true, providers: missing, settings: updated };
 }

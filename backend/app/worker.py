@@ -3,17 +3,22 @@ import json
 import logging
 
 from app.config import get_settings
-from app.db import claim_next_queue_job, complete_queue_job, fail_queue_job, get_job, update_job
+from app.db import claim_next_queue_job, complete_queue_job, fail_queue_job, get_job, init_db, update_job
 from app.jobs.runner import run_job
 from app.models import JobStatus
+from app.secrets_store import apply_provider_secrets_to_runtime
 
 log = logging.getLogger("ppc.worker")
 
 
 async def worker_loop() -> None:
+    await init_db()
+    await apply_provider_secrets_to_runtime()
     settings = get_settings()
     log.info("Worker started (poll=%ss)", settings.worker_poll_seconds)
     while True:
+        # Pick up keys saved via Settings without requiring a worker redeploy.
+        await apply_provider_secrets_to_runtime()
         queue_item = await claim_next_queue_job()
         if not queue_item:
             await asyncio.sleep(settings.worker_poll_seconds)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { fetchAuthStatus, fetchMe, logout } from "./api";
-import { syncProviderKeysToServer } from "./providerKeys";
+import { migrateLegacyBrowserKeysOnce } from "./providerKeys";
 import DiagnosticsPage from "./pages/DiagnosticsPage";
 import HomePage from "./pages/HomePage";
 import JobDetailPage from "./pages/JobDetailPage";
@@ -41,13 +41,10 @@ export default function App() {
     })();
   }, []);
 
-  // After login, restore API keys from this browser onto the server if missing
-  // (e.g. after redeploy wiped ephemeral .env / process env).
+  // One-time: move any legacy localStorage keys into encrypted DB storage.
   useEffect(() => {
     if (!ready || (authEnabled && !email)) return;
-    void syncProviderKeysToServer().catch(() => {
-      /* non-fatal — Settings Save remains available */
-    });
+    void migrateLegacyBrowserKeysOnce().catch(() => undefined);
   }, [ready, authEnabled, email]);
 
   if (!ready) return <div className="layout"><p>Loading...</p></div>;
@@ -58,7 +55,7 @@ export default function App() {
         <LoginPage
           onLoggedIn={(nextEmail) => {
             setEmail(nextEmail);
-            void syncProviderKeysToServer().catch(() => undefined);
+            void migrateLegacyBrowserKeysOnce().catch(() => undefined);
           }}
         />
       </div>

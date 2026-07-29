@@ -66,6 +66,8 @@ class Settings(BaseSettings):
 
     worker_poll_seconds: int = 5
     worker_max_retries: int = 2
+    # Used to encrypt provider API keys in the database. Falls back to auth_jwt_secret.
+    secrets_master_key: str = ""
 
     @field_validator("brand_examples_dir", mode="before")
     @classmethod

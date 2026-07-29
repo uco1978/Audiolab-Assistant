@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS job_queue (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_secrets (
+    name TEXT PRIMARY KEY,
+    ciphertext TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 POSTGRES_STATEMENTS = [
@@ -101,6 +107,13 @@ POSTGRES_STATEMENTS = [
         max_attempts INTEGER NOT NULL DEFAULT 2,
         run_after TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS app_secrets (
+        name TEXT PRIMARY KEY,
+        ciphertext TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
     """,
