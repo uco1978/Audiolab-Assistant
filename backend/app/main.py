@@ -18,6 +18,7 @@ from app.config import PROJECT_ROOT, get_settings
 from app.db import (
     cancel_job,
     create_job,
+    delete_job_record,
     enqueue_job,
     get_ai_usage_summary,
     get_job,
@@ -423,6 +424,80 @@ async def cancel_job_endpoint(job_id: str):
     if not cancelled:
         raise HTTPException(404, "Job not found")
     return cancelled
+
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job_endpoint(job_id: str):
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status.value in ("pending", "running"):
+        await cancel_job(job_id)
+
+    deleted_objects = 0
+    storage_warning: str | None = None
+    prefix = job.storage_prefix or f"jobs/{job_id}"
+    try:
+        deleted_objects = get_storage().delete_prefix(prefix)
+    except Exception as exc:
+        storage_warning = str(exc)
+
+    ok = await delete_job_record(job_id)
+    if not ok:
+        raise HTTPException(404, "Job not found")
+    return {
+        "ok": True,
+        "deleted_objects": deleted_objects,
+        "storage_prefix": prefix,
+        "storage_warning": storage_warning,
+    }
+
+
+@app.get("/api/storage")
+async def list_storage(prefix: str = ""):
+    settings = get_settings()
+    try:
+        listing = get_storage().list_prefix(prefix)
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+    return {
+        "backend": settings.storage_backend,
+        "bucket": settings.storage_bucket or None,
+        "prefix": listing.prefix,
+        "folders": listing.folders,
+        "objects": [
+            {"key": o.key, "size": o.size, "last_modified": o.last_modified}
+            for o in listing.objects
+        ],
+        "total_bytes": listing.total_bytes,
+    }
+
+
+@app.delete("/api/storage")
+async def delete_storage(body: dict):
+    keys = body.get("keys") or []
+    prefix = body.get("prefix")
+    if not isinstance(keys, list):
+        raise HTTPException(400, "keys must be a list of strings")
+    if prefix is not None and not isinstance(prefix, str):
+        raise HTTPException(400, "prefix must be a string")
+    if not keys and not prefix:
+        raise HTTPException(400, "Provide keys and/or prefix to delete")
+    if isinstance(prefix, str) and not prefix.strip().strip("/"):
+        raise HTTPException(400, "Refusing to delete entire bucket/root")
+
+    storage = get_storage()
+    deleted = 0
+    try:
+        if keys:
+            deleted += storage.delete_keys([str(k) for k in keys])
+        if prefix:
+            deleted += storage.delete_prefix(prefix)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+    return {"ok": True, "deleted": deleted}
 
 
 @app.post("/api/jobs/{job_id}/rate")

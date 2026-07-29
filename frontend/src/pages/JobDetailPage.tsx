@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   cancelJob,
+  deleteJob,
   fetchJob,
   fetchManifest,
   fetchVariantCopy,
@@ -20,6 +21,7 @@ import StarRating from "../components/StarRating";
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [job, setJob] = useState<Job | null>(null);
   const [html, setHtml] = useState("");
   const [shortDesc, setShortDesc] = useState("");
@@ -35,6 +37,7 @@ export default function JobDetailPage() {
   const [variantBusy, setVariantBusy] = useState<Record<string, boolean>>({});
   const [promotedVariant, setPromotedVariant] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const fetchWithAuth = (url: string) => {
     const token = localStorage.getItem("ppc_access_token");
@@ -133,6 +136,28 @@ export default function JobDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!id || deleteBusy) return;
+    if (
+      !window.confirm(
+        "Delete this job and its stored files under jobs/{id}/? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const result = await deleteJob(id);
+      if (result.storage_warning) {
+        window.alert(`Job deleted, but storage cleanup warned: ${result.storage_warning}`);
+      }
+      navigate("/jobs");
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Delete failed");
+      setDeleteBusy(false);
+    }
+  };
+
   const handleSync = async () => {
     if (!id) return;
     setSyncMsg("");
@@ -161,6 +186,15 @@ export default function JobDetailPage() {
           <div className="actions" style={{ marginTop: "0.75rem" }}>
             <button type="button" onClick={handleCancel} disabled={cancelBusy}>
               {cancelBusy ? "Cancelling…" : "Cancel job"}
+            </button>
+          </div>
+        )}
+        {(job.status === "completed" ||
+          job.status === "failed" ||
+          job.status === "cancelled") && (
+          <div className="actions" style={{ marginTop: "0.75rem" }}>
+            <button type="button" onClick={handleDelete} disabled={deleteBusy}>
+              {deleteBusy ? "Deleting…" : "Delete job & files"}
             </button>
           </div>
         )}

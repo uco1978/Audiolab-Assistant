@@ -321,6 +321,24 @@ async def cancel_job(job_id: str) -> JobResponse | None:
     return await get_job(job_id)
 
 
+async def delete_job_record(job_id: str) -> bool:
+    """Remove a job and its queue rows from the database."""
+    if _is_postgres():
+        conn = await asyncpg.connect(get_settings().database_url)  # type: ignore[arg-type]
+        try:
+            await conn.execute("DELETE FROM job_queue WHERE job_id = $1", job_id)
+            result = await conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
+            return result.endswith("1") or result == "DELETE 1"
+        finally:
+            await conn.close()
+
+    async with aiosqlite.connect(get_settings().database_path) as db:
+        await db.execute("DELETE FROM job_queue WHERE job_id = ?", (job_id,))
+        cursor = await db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
 def _row_to_job(row: aiosqlite.Row | dict) -> JobResponse:
     progress_raw = json.loads(row["progress"] or "[]")
     progress = [JobProgressEvent(**e) for e in progress_raw]

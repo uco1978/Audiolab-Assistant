@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { cancelJob, fetchJobs, Job } from "../api";
+import { cancelJob, deleteJob, fetchJobs, Job } from "../api";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchJobs().then(setJobs);
@@ -13,16 +13,39 @@ export default function JobsPage() {
   }, []);
 
   const handleCancel = async (jobId: string) => {
-    if (cancelling[jobId]) return;
+    if (busyId) return;
     if (!window.confirm("Cancel this job?")) return;
-    setCancelling((prev) => ({ ...prev, [jobId]: true }));
+    setBusyId(jobId);
     try {
       const updated = await cancelJob(jobId);
       setJobs((prev) => prev.map((j) => (j.id === jobId ? updated : j)));
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Cancel failed");
     } finally {
-      setCancelling((prev) => ({ ...prev, [jobId]: false }));
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (jobId: string) => {
+    if (busyId) return;
+    if (
+      !window.confirm(
+        "Delete this job and its stored files under jobs/{id}/? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setBusyId(jobId);
+    try {
+      const result = await deleteJob(jobId);
+      setJobs((prev) => prev.filter((j) => j.id !== jobId));
+      if (result.storage_warning) {
+        window.alert(`Job deleted, but storage cleanup warned: ${result.storage_warning}`);
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -44,9 +67,20 @@ export default function JobsPage() {
               <button
                 type="button"
                 onClick={() => handleCancel(job.id)}
-                disabled={cancelling[job.id]}
+                disabled={busyId === job.id}
               >
-                {cancelling[job.id] ? "Cancelling…" : "Cancel"}
+                {busyId === job.id ? "…" : "Cancel"}
+              </button>
+            )}
+            {(job.status === "completed" ||
+              job.status === "failed" ||
+              job.status === "cancelled") && (
+              <button
+                type="button"
+                onClick={() => handleDelete(job.id)}
+                disabled={busyId === job.id}
+              >
+                {busyId === job.id ? "Deleting…" : "Delete"}
               </button>
             )}
           </div>

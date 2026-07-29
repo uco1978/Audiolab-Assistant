@@ -161,6 +161,52 @@ export async function cancelJob(id: string): Promise<Job> {
   return res.json();
 }
 
+export async function deleteJob(id: string): Promise<{
+  ok: boolean;
+  deleted_objects: number;
+  storage_prefix: string;
+  storage_warning?: string | null;
+}> {
+  const res = await apiFetch(`/jobs/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export interface StorageObjectInfo {
+  key: string;
+  size: number;
+  last_modified?: string | null;
+}
+
+export interface StorageListing {
+  backend: string;
+  bucket?: string | null;
+  prefix: string;
+  folders: string[];
+  objects: StorageObjectInfo[];
+  total_bytes: number;
+}
+
+export async function fetchStorage(prefix = ""): Promise<StorageListing> {
+  const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
+  const res = await apiFetch(`/storage${q}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteStorage(body: {
+  keys?: string[];
+  prefix?: string;
+}): Promise<{ ok: boolean; deleted: number }> {
+  const res = await apiFetch(`/storage`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function createJob(body: {
   url: string;
   web_search?: boolean;

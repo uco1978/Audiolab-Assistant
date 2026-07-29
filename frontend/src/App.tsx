@@ -7,6 +7,7 @@ import JobDetailPage from "./pages/JobDetailPage";
 import JobsPage from "./pages/JobsPage";
 import LoginPage from "./pages/LoginPage";
 import SettingsPage from "./pages/SettingsPage";
+import StoragePage from "./pages/StoragePage";
 import TrainingPage from "./pages/TrainingPage";
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
         <nav>
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/jobs">Jobs</NavLink>
+          <NavLink to="/storage">Storage</NavLink>
           <NavLink to="/training">Training</NavLink>
           <NavLink to="/settings">Settings</NavLink>
           <NavLink to="/diagnostics">Diagnostics</NavLink>
@@ -82,6 +84,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:id" element={<JobDetailPage />} />
+        <Route path="/storage" element={<StoragePage />} />
         <Route path="/training" element={<TrainingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/diagnostics" element={<DiagnosticsPage />} />
