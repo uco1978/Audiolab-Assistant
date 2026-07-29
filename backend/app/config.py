@@ -194,8 +194,8 @@ class Settings(BaseSettings):
                 "requires_key": "anthropic_api_key",
             },
             {
-                "id": "cohere/command-r-plus",
-                "label": "Cohere Command R+",
+                "id": "cohere/command-r-plus-08-2024",
+                "label": "Cohere Command R+ (08-2024)",
                 "provider": "cohere",
                 "tier": "premium",
                 "role": "text",

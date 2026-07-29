@@ -105,7 +105,7 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
     elif provider == "anthropic":
         candidates = ["anthropic/claude-3-5-haiku-latest", "anthropic/claude-3-5-sonnet-latest"]
     elif provider == "cohere":
-        candidates = ["cohere/command-r-plus", "cohere/command-r"]
+        candidates = ["cohere/command-r-plus-08-2024", "cohere/command-r7b-12-2024"]
     elif provider == "mistral":
         candidates = ["mistral/mistral-large-latest", "mistral/mistral-small-latest"]
     elif provider == "perplexity":
