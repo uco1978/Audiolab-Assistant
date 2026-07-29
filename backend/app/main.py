@@ -86,6 +86,9 @@ async def request_guard(request: Request, call_next):
 async def auth_guard(request: Request, call_next):
     if not settings.auth_enabled:
         return await call_next(request)
+    # Let CORS preflight requests pass without auth.
+    if request.method == "OPTIONS":
+        return await call_next(request)
     path = request.url.path
     if (
         path in {"/api/health", "/api/auth/login", "/api/auth/status"}
