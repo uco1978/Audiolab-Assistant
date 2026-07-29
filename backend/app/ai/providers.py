@@ -52,9 +52,11 @@ def provider_from_model(model_id: str) -> str:
 
 
 def litellm_model_name(model_id: str) -> str:
-    # Keep internal model ids provider-qualified, but pass provider-native names to LiteLLM where needed.
-    if model_id.startswith("openrouter/"):
-        return model_id.replace("openrouter/", "", 1)
+    """Map internal model id to the name LiteLLM expects.
+
+    LiteLLM recognises 'openrouter/' as a native provider prefix, so we keep it.
+    Our internal ids already match LiteLLM format for all other providers.
+    """
     return model_id
 
 
@@ -98,9 +100,8 @@ async def test_provider_connection(provider: str, api_key: str | None = None, mo
         candidates = [model_id]
     elif provider == "openrouter":
         candidates = [
-            "openrouter/openrouter/free",
-            "openrouter/openrouter/auto",
             "openrouter/google/gemma-2-9b-it:free",
+            "openrouter/meta-llama/llama-3-8b-instruct:free",
         ]
     elif provider == "gemini":
         candidates = [

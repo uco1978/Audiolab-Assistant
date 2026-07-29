@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     perplexity_api_key: str = ""
     xai_api_key: str = ""
-    default_models: str = "openrouter/openrouter/free,gemini/gemini-2.5-flash,groq/llama-3.3-70b-versatile"
+    default_models: str = "openrouter/google/gemma-2-9b-it:free,gemini/gemini-2.5-flash,groq/llama-3.3-70b-versatile"
     model_fallback_chain: str = "openrouter,gemini,groq,openai,anthropic,mistral,cohere,perplexity,xai"
 
     enable_cloud_fallback: bool = False
@@ -113,14 +113,6 @@ class Settings(BaseSettings):
     @property
     def available_models(self) -> list[dict]:
         return [
-            {
-                "id": "openrouter/openrouter/free",
-                "label": "OpenRouter Free Router",
-                "provider": "openrouter",
-                "tier": "free_tier",
-                "role": "text",
-                "requires_key": "openrouter_api_key",
-            },
             {
                 "id": "openrouter/google/gemma-2-9b-it:free",
                 "label": "OpenRouter Gemma 2 9B (Free)",
