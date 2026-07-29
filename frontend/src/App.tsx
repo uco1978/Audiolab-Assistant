@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { fetchAuthStatus, fetchMe, logout } from "./api";
+import { syncProviderKeysToServer } from "./providerKeys";
 import DiagnosticsPage from "./pages/DiagnosticsPage";
 import HomePage from "./pages/HomePage";
 import JobDetailPage from "./pages/JobDetailPage";
@@ -40,12 +41,26 @@ export default function App() {
     })();
   }, []);
 
+  // After login, restore API keys from this browser onto the server if missing
+  // (e.g. after redeploy wiped ephemeral .env / process env).
+  useEffect(() => {
+    if (!ready || (authEnabled && !email)) return;
+    void syncProviderKeysToServer().catch(() => {
+      /* non-fatal — Settings Save remains available */
+    });
+  }, [ready, authEnabled, email]);
+
   if (!ready) return <div className="layout"><p>Loading...</p></div>;
 
   if (authEnabled && !email) {
     return (
       <div className="layout">
-        <LoginPage onLoggedIn={setEmail} />
+        <LoginPage
+          onLoggedIn={(nextEmail) => {
+            setEmail(nextEmail);
+            void syncProviderKeysToServer().catch(() => undefined);
+          }}
+        />
       </div>
     );
   }

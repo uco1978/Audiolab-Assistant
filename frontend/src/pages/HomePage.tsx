@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AiStatus, createJob, fetchAiStatus } from "../api";
+import { syncProviderKeysToServer } from "../providerKeys";
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -14,9 +15,22 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchAiStatus().then(setAi);
-    const t = setInterval(() => fetchAiStatus().then(setAi), 15000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        await syncProviderKeysToServer();
+      } catch {
+        /* ignore */
+      }
+      const status = await fetchAiStatus();
+      if (!cancelled) setAi(status);
+    };
+    void refresh();
+    const t = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

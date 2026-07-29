@@ -1,18 +1,11 @@
 import { useEffect, useState } from "react";
 import { fetchSettings, Settings, testProviderConnection, updateSettings } from "../api";
-
-const KEY_STORAGE_PREFIX = "ppc_provider_key_";
-const API_KEY_FIELD_BY_PROVIDER: Record<string, string> = {
-  gemini: "gemini_api_key",
-  groq: "groq_api_key",
-  openrouter: "openrouter_api_key",
-  openai: "openai_api_key",
-  anthropic: "anthropic_api_key",
-  cohere: "cohere_api_key",
-  mistral: "mistral_api_key",
-  perplexity: "perplexity_api_key",
-  xai: "xai_api_key",
-};
+import {
+  API_KEY_FIELD_BY_PROVIDER,
+  readStoredProviderKeys,
+  syncProviderKeysToServer,
+  writeStoredProviderKey,
+} from "../providerKeys";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -23,12 +16,23 @@ export default function SettingsPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+  const [syncNote, setSyncNote] = useState("");
 
   const loadSettings = async () => {
     setLoading(true);
     setError("");
     try {
-      const s = await fetchSettings();
+      const restored = readStoredProviderKeys();
+      setKeys(restored);
+
+      const sync = await syncProviderKeysToServer();
+      if (sync.synced && sync.providers.length > 0) {
+        setSyncNote(`Auto-synced keys for: ${sync.providers.join(", ")}`);
+      } else {
+        setSyncNote("");
+      }
+
+      const s = sync.settings ?? (await fetchSettings());
       setSettings(s);
       setOutputDir(s.output_dir);
     } catch (err) {
@@ -44,14 +48,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
-  }, []);
-
-  useEffect(() => {
-    const restored: Record<string, string> = {};
-    for (const provider of Object.keys(API_KEY_FIELD_BY_PROVIDER)) {
-      restored[provider] = localStorage.getItem(`${KEY_STORAGE_PREFIX}${provider}`) || "";
-    }
-    setKeys(restored);
   }, []);
 
   const handleSave = async () => {
@@ -77,7 +73,7 @@ export default function SettingsPage() {
 
   const setProviderKey = (provider: string, value: string) => {
     setKeys((prev) => ({ ...prev, [provider]: value }));
-    localStorage.setItem(`${KEY_STORAGE_PREFIX}${provider}`, value);
+    writeStoredProviderKey(provider, value);
   };
 
   const runProviderTest = async (provider: string) => {
@@ -126,10 +122,11 @@ export default function SettingsPage() {
 
       <h3>AI Providers</h3>
       <p className="muted">
-        Paste at least one key (Gemini or OpenRouter recommended), then click <strong>Save</strong>.
-        Test alone is not enough — jobs and style-guide generation use server keys only.
-        On Render, set the same keys as env vars on <code>ppc-backend</code> and <code>ppc-worker</code> so they survive redeploys.
+        Keys are kept in this browser and auto-synced to the server after login or refresh when the
+        server is missing them. For permanent setup (and the worker), also set the same keys as
+        Render env vars on <code>ppc-backend</code> and <code>ppc-worker</code>.
       </p>
+      {syncNote && <p className="muted">{syncNote}</p>}
       {(settings.provider_order?.length ? settings.provider_order : Object.keys(settings.providers)).map((provider) => (
         <div key={provider} style={{ marginBottom: "0.9rem" }}>
           <label>{providerLabel(provider)} API key</label>
