@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  buildDataset,
   CorpusSummary,
-  downloadTrainingPackage,
-  exportTrainingPackage,
   fetchCorpus,
   generateStyleGuide,
   scanCorpus,
@@ -40,47 +37,6 @@ export default function TrainingPage() {
     }
   };
 
-  const handleBuildDataset = async () => {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const result = await buildDataset();
-      setMessage(
-        `Dataset built: ${result.train_records} training records, ${result.validation_records} validation records.`
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Dataset build failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const result = await exportTrainingPackage();
-      setMessage(`Training package ready: ${result.filename}`);
-      if (result.url) {
-        window.location.href = result.url;
-      } else {
-        const blob = await downloadTrainingPackage();
-        const href = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = href;
-        a.download = result.filename;
-        a.click();
-        URL.revokeObjectURL(href);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleGenerateStyleGuide = async () => {
     setBusy(true);
     setError("");
@@ -100,11 +56,10 @@ export default function TrainingPage() {
   return (
     <>
       <div className="card">
-        <h2>Brand Model Training — Phase 1</h2>
+        <h2>Brand Style Guide</h2>
         <p className="muted">
-          Point the app at your existing Word product-copy folder. This phase scans the corpus,
-          builds a clean JSONL dataset, and exports a Kaggle/Colab training package. It does not
-          train locally yet.
+          Point the app at your existing product-copy folder. Scan the texts, then generate a
+          compact style guide that cloud models will use for future product pages.
         </p>
 
         <label>Product copy folder path</label>
@@ -116,31 +71,14 @@ export default function TrainingPage() {
         />
         <div className="actions">
           <button type="button" disabled={busy || !folderPath} onClick={handleScan}>
-            Scan Word folder
+            Scan folder
           </button>
           <button
-            className="secondary"
-            type="button"
-            disabled={busy || !corpus?.usable_files}
-            onClick={handleBuildDataset}
-          >
-            Build dataset.jsonl
-          </button>
-          <button
-            className="secondary"
-            type="button"
-            disabled={busy || !corpus?.usable_files}
-            onClick={handleExport}
-          >
-            Export Kaggle/Colab package
-          </button>
-          <button
-            className="secondary"
             type="button"
             disabled={busy || !corpus?.usable_files}
             onClick={handleGenerateStyleGuide}
           >
-            Generate style guide from corpus
+            Generate style guide
           </button>
         </div>
 
