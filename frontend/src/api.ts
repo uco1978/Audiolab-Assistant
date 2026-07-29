@@ -51,6 +51,14 @@ export interface Settings {
   storage_backend: string;
 }
 
+export interface ProviderTestResult {
+  ok: boolean;
+  provider: string;
+  model_id?: string;
+  response?: string;
+  error?: string;
+}
+
 export interface AuthUser {
   email: string;
   role: string;
@@ -168,6 +176,19 @@ export async function fetchSettings(): Promise<Settings> {
 export async function updateSettings(data: Record<string, string | boolean>): Promise<Settings> {
   const res = await apiFetch(`/settings`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function testProviderConnection(data: {
+  provider: "gemini" | "groq" | "openrouter";
+  api_key?: string;
+  model_id?: string;
+}): Promise<ProviderTestResult> {
+  const res = await apiFetch(`/ai/test`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });

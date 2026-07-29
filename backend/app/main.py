@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
+from app.ai.providers import test_provider_connection
 from app.auth import authenticate, create_access_token, decode_access_token
 from app.config import PROJECT_ROOT, get_settings
 from app.db import (
@@ -25,6 +26,7 @@ from app.db import (
 from app.integrations.woocommerce import sync_product_to_woocommerce
 from app.models import (
     AuthUserResponse,
+    AiProviderTestRequest,
     CorpusScanRequest,
     CorpusSummaryResponse,
     CreateJobRequest,
@@ -188,6 +190,26 @@ async def ai_status():
         "fallback_chain": s.model_fallback_chain,
         "default_models": s.default_model_ids,
     }
+
+
+@app.post("/api/ai/test")
+async def ai_test_provider(body: AiProviderTestRequest):
+    try:
+        result = await test_provider_connection(
+            provider=body.provider,
+            api_key=body.api_key,
+            model_id=body.model_id,
+        )
+        return result
+    except Exception as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "provider": body.provider,
+                "error": str(exc),
+            },
+        )
 
 
 @app.get("/api/models")

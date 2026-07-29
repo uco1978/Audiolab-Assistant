@@ -66,6 +66,12 @@ class SettingsUpdate(BaseModel):
     webp_quality: int | None = None
 
 
+class AiProviderTestRequest(BaseModel):
+    provider: str
+    api_key: str | None = None
+    model_id: str | None = None
+
+
 class WooCommerceSyncRequest(BaseModel):
     site_url: str
     consumer_key: str

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchSettings, Settings, updateSettings } from "../api";
+import { fetchSettings, Settings, testProviderConnection, updateSettings } from "../api";
+
+type ProviderId = "gemini" | "groq" | "openrouter";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -7,6 +9,21 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [keys, setKeys] = useState<Record<ProviderId, string>>({
+    gemini: "",
+    groq: "",
+    openrouter: "",
+  });
+  const [testing, setTesting] = useState<Record<ProviderId, boolean>>({
+    gemini: false,
+    groq: false,
+    openrouter: false,
+  });
+  const [testStatus, setTestStatus] = useState<Record<ProviderId, string>>({
+    gemini: "",
+    groq: "",
+    openrouter: "",
+  });
 
   const loadSettings = async () => {
     setLoading(true);
@@ -31,10 +48,41 @@ export default function SettingsPage() {
   }, []);
 
   const handleSave = async () => {
-    const s = await updateSettings({ output_dir: outputDir });
+    const payload: Record<string, string | boolean> = { output_dir: outputDir };
+    if (keys.gemini.trim()) payload.gemini_api_key = keys.gemini.trim();
+    if (keys.groq.trim()) payload.groq_api_key = keys.groq.trim();
+    if (keys.openrouter.trim()) payload.openrouter_api_key = keys.openrouter.trim();
+    const s = await updateSettings(payload);
     setSettings(s);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const providerLabel = (provider: ProviderId): string =>
+    provider === "openrouter" ? "OpenRouter" : provider[0].toUpperCase() + provider.slice(1);
+
+  const runProviderTest = async (provider: ProviderId) => {
+    setTesting((prev) => ({ ...prev, [provider]: true }));
+    setTestStatus((prev) => ({ ...prev, [provider]: "" }));
+    try {
+      const result = await testProviderConnection({
+        provider,
+        api_key: keys[provider].trim() || undefined,
+      });
+      setTestStatus((prev) => ({
+        ...prev,
+        [provider]: result.ok
+          ? `Connected (${result.model_id ?? "default model"})`
+          : `Failed: ${result.error ?? "Unknown error"}`,
+      }));
+    } catch (err) {
+      setTestStatus((prev) => ({
+        ...prev,
+        [provider]: `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      }));
+    } finally {
+      setTesting((prev) => ({ ...prev, [provider]: false }));
+    }
   };
 
   if (loading && !settings) return <p>Loading…</p>;
@@ -58,13 +106,24 @@ export default function SettingsPage() {
       </p>
 
       <h3>AI Providers</h3>
-      <p className="muted">
-        Gemini: {settings.providers.gemini ? "Configured" : "Missing key"}
-        <br />
-        Groq: {settings.providers.groq ? "Configured" : "Missing key"}
-        <br />
-        OpenRouter: {settings.providers.openrouter ? "Configured" : "Missing key"}
-      </p>
+      {(["gemini", "groq", "openrouter"] as ProviderId[]).map((provider) => (
+        <div key={provider} style={{ marginBottom: "0.9rem" }}>
+          <label>{providerLabel(provider)} API key</label>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              type="password"
+              value={keys[provider]}
+              onChange={(e) => setKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
+              placeholder={settings.providers[provider] ? "Configured (enter to replace)" : "Paste API key"}
+            />
+            <button type="button" onClick={() => runProviderTest(provider)} disabled={testing[provider]}>
+              {testing[provider] ? "Testing..." : "Test"}
+            </button>
+            <span className="muted">{settings.providers[provider] ? "Configured" : "Missing key"}</span>
+          </div>
+          {testStatus[provider] && <p className="muted">{testStatus[provider]}</p>}
+        </div>
+      ))}
       <p className="muted">
         Default models: <code>{settings.default_models}</code>
         <br />

@@ -50,6 +50,47 @@ async def completion(
     return content
 
 
+async def test_provider_connection(provider: str, api_key: str | None = None, model_id: str | None = None) -> dict[str, Any]:
+    provider = provider.strip().lower()
+    if provider not in {"gemini", "groq", "openrouter"}:
+        raise RuntimeError(f"Unsupported provider: {provider}")
+
+    settings = get_settings()
+    model = model_id
+    if not model:
+        for item in settings.available_models:
+            if item["provider"] == provider:
+                model = item["id"]
+                break
+    if not model:
+        raise RuntimeError(f"No model configured for provider: {provider}")
+
+    env_key_map = {
+        "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }
+    env_key = env_key_map[provider]
+    fallback_val = os.environ.get(env_key)
+    settings_key = getattr(settings, f"{provider}_api_key", "")
+    candidate_key = (api_key or "").strip() or settings_key.strip()
+    if not candidate_key:
+        raise RuntimeError(f"Missing API key for provider: {provider}")
+
+    os.environ[env_key] = candidate_key
+    try:
+        content = await completion(
+            model,
+            [{"role": "user", "content": "Reply with OK only."}],
+        )
+        return {"ok": True, "provider": provider, "model_id": model, "response": content[:60]}
+    finally:
+        if fallback_val is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = fallback_val
+
+
 async def completion_with_fallback(
     model_ids: list[str],
     messages: list[dict[str, str]],
