@@ -5,12 +5,29 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [outputDir, setOutputDir] = useState("");
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetchSettings().then((s) => {
+  const loadSettings = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const s = await fetchSettings();
       setSettings(s);
       setOutputDir(s.output_dir);
-    });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load settings";
+      setError(message);
+      if (message === "Unauthorized") {
+        window.location.reload();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
   }, []);
 
   const handleSave = async () => {
@@ -20,6 +37,16 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  if (loading && !settings) return <p>Loading…</p>;
+  if (error && !settings) {
+    return (
+      <div className="card">
+        <h2>Settings</h2>
+        <p style={{ color: "var(--danger)" }}>{error}</p>
+        <button type="button" onClick={loadSettings}>Retry</button>
+      </div>
+    );
+  }
   if (!settings) return <p>Loading…</p>;
 
   return (
@@ -76,6 +103,7 @@ export default function SettingsPage() {
         Save
       </button>
       {saved && <span className="muted"> Saved!</span>}
+      {error && <p style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
   );
 }
